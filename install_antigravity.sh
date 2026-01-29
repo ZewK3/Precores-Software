@@ -1,0 +1,21 @@
+#!/bin/bash
+# Install Antigravity OS Components
+
+set -e
+
+echo "[INSTALL] Adding Antigravity Repository..."
+sudo mkdir -p /etc/apt/keyrings
+
+curl -fsSL https://us-central1-apt.pkg.dev/doc/repo-signing-key.gpg | \
+  sudo gpg --dearmor --yes -o /etc/apt/keyrings/antigravity-repo-key.gpg
+
+echo "deb [signed-by=/etc/apt/keyrings/antigravity-repo-key.gpg] https://us-central1-apt.pkg.dev/projects/antigravity-auto-updater-dev/ antigravity-debian main" | \
+  sudo tee /etc/apt/sources.list.d/antigravity.list > /dev/null
+
+echo "[INSTALL] Updating package lists..."
+sudo apt update
+
+echo "[INSTALL] Installing Antigravity..."
+sudo apt install -y antigravity
+
+echo "[SUCCESS] Antigravity installed successfully."
