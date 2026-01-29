@@ -253,11 +253,29 @@ if [[ -d "$NOVNC_DIR" ]]; then
             fi
 
             # Run Python Patcher
-            if python3 "$PATCHER_SCRIPT" "$VNC_HTML"; then
-                # Verify Patch
-                if grep -q "custom-theme.css" "$VNC_HTML"; then
-                    log_success "Verification: custom-theme.css found in vnc.html"
-                else
+            # Patch Multiple Entry Points (vnc.html, index.html, vnc_lite.html)
+            # This ensures user sees theme regardless of which file is served
+            TARGETS=("vnc.html" "index.html" "vnc_lite.html")
+            
+            for target in "${TARGETS[@]}"; do
+                FILE="$NOVNC_DIR/$target"
+                if [[ -f "$FILE" ]]; then
+                    log_info "Processing $target..."
+                    
+                    # Backup logic is now handled inside patch_vnc.py v5+, 
+                    # but we still need to pass the file to it.
+                    if python3 "$PATCHER_SCRIPT" "$FILE"; then
+                        log_success "Successfully patched $target"
+                    else
+                        log_error "Failed to patch $target"
+                    fi
+                fi
+            done
+            
+            # Verify Main Entry Point (vnc.html) as sanity check
+            if grep -q "custom-theme.css" "$VNC_HTML"; then
+                 log_success "Verification: custom-theme.css found in vnc.html"
+            else
                     log_error "Verification FAILED: custom-theme.css NOT found in vnc.html"
                 fi
                 
