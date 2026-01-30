@@ -164,18 +164,35 @@ systemctl enable novnc-integrations.service
 log_success "Service enabled"
 
 # 4.5 Setup Force DNS Service (Requested)
+# 4.5 Setup Force DNS Service (Requested)
 setup_force_dns_service() {
-    log_info "Configuring Force DNS (1.1.1.1) on startup..."
+    log_info "Configuring Force DNS (1.1.1.1) with Persistence..."
     
+    # 1. Apply immediate fix (Break symlink + Immutable)
+    if command -v chattr &> /dev/null; then
+        chattr -i /etc/resolv.conf 2>/dev/null || true
+    fi
+    
+    rm -f /etc/resolv.conf
+    echo "nameserver 1.1.1.1" > /etc/resolv.conf
+    echo "nameserver 8.8.8.8" >> /etc/resolv.conf
+    
+    if command -v chattr &> /dev/null; then
+        chattr +i /etc/resolv.conf
+        log_success "Applied immutable attribute to /etc/resolv.conf"
+    fi
+
+    # 2. Create Systemd Service to Enforce on Boot
+    # (Just in case network manager recreates it before we lock it)
     cat > /etc/systemd/system/force-dns.service <<EOF
 [Unit]
-Description=Force DNS to 1.1.1.1
-After=network.target
-Before=systemd-user-sessions.service
+Description=Force DNS to 1.1.1.1 (Immutable)
+After=network-online.target systemd-resolved.service NetworkManager.service
+Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/bin/sh -c 'echo "nameserver 1.1.1.1" > /etc/resolv.conf'
+ExecStart=/bin/bash -c 'if command -v chattr >/dev/null; then chattr -i /etc/resolv.conf 2>/dev/null || true; fi; rm -f /etc/resolv.conf; echo "nameserver 1.1.1.1" > /etc/resolv.conf; echo "nameserver 8.8.8.8" >> /etc/resolv.conf; if command -v chattr >/dev/null; then chattr +i /etc/resolv.conf; fi'
 RemainAfterExit=yes
 
 [Install]
@@ -184,7 +201,7 @@ EOF
 
     systemctl daemon-reload
     systemctl enable force-dns.service
-    log_success "Force DNS service enabled"
+    log_success "Force DNS service enabled (Immutable Mode)"
 }
 setup_force_dns_service
 
@@ -298,7 +315,7 @@ if [[ -d "$NOVNC_DIR" ]]; then
     else
         log_error "Source directories missing in extracted archive"
     fi
-fi
+
 
 # 6. Create Desktop Shortcut for File Transfer (using internal URL)
 log_info "Creating desktop shortcut..."
