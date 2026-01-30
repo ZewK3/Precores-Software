@@ -113,6 +113,13 @@ RATE_LIMIT_MAX=100
 LOG_LEVEL=info
 EOF
     
+    # Ensure archiver package is in package.json (for folder download feature)
+    if ! grep -q '"archiver"' package.json; then
+        log_info "Adding archiver package to dependencies..."
+        # Use sed to add archiver before the closing brace of dependencies
+        sed -i 's/"http-proxy-middleware": "\^2.0.6"/"http-proxy-middleware": "^2.0.6",\n    "archiver": "^6.0.1"/' package.json
+    fi
+    
     # npm install with Smart Proxy Fallback
     RETRY_COUNT=0
     MAX_RETRIES=3
@@ -120,7 +127,7 @@ EOF
     
     while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
         if npm install --production --no-audit --no-fund 2>&1; then
-            log_success "Dependencies installed"
+            log_success "Dependencies installed (including archiver for folder download)"
             NPM_SUCCESS=true
             break
         else
@@ -291,20 +298,15 @@ if [[ -d "$NOVNC_DIR" ]]; then
             
             # Verify Main Entry Point (vnc.html) as sanity check
             if grep -q "custom-theme.css" "$VNC_HTML"; then
-                 log_success "Verification: custom-theme.css found in vnc.html"
+                log_success "Verification: custom-theme.css found in vnc.html"
             else
-                    log_error "Verification FAILED: custom-theme.css NOT found in vnc.html"
-                fi
-                
-                if grep -q "enhanced-features.js" "$VNC_HTML"; then
-                    log_success "Verification: enhanced-features.js found in vnc.html"
-                else
-                    log_error "Verification FAILED: enhanced-features.js NOT found in vnc.html"
-                fi
-                
-                log_success "vnc.html patched successfully"
+                log_error "Verification FAILED: custom-theme.css NOT found in vnc.html"
+            fi
+            
+            if grep -q "enhanced-features.js" "$VNC_HTML"; then
+                log_success "Verification: enhanced-features.js found in vnc.html"
             else
-                log_error "Patching failed!"
+                log_error "Verification FAILED: enhanced-features.js NOT found in vnc.html"
             fi
             
             # Fix Permissions
