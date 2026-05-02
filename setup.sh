@@ -251,6 +251,13 @@ vm.vfs_cache_pressure = 50
 # Dirty ratio for better write performance
 vm.dirty_ratio = 10
 vm.dirty_background_ratio = 5
+
+# Increase file descriptor limits
+fs.file-max = 2097152
+
+# Optimize memory allocation
+vm.overcommit_memory = 1
+vm.overcommit_ratio = 50
 EOF
     
     log_info "✓ System configured with zram and memory optimizations"
@@ -379,6 +386,23 @@ EOF
     chmod +x /mnt/home/$USERNAME/.xinitrc
     chown 1000:1000 /mnt/home/$USERNAME/.xinitrc
     
+    # Optimize XFCE for performance
+    log_info "Optimizing XFCE for performance..."
+    mkdir -p /mnt/home/$USERNAME/.config/xfce4/xfconf/xfce-perchannel-xml
+    
+    # Disable compositor for better performance
+    cat > /mnt/home/$USERNAME/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<channel name="xfwm4" version="1.0">
+  <property name="general" type="empty">
+    <property name="use_compositing" type="bool" value="false"/>
+    <property name="vblank_mode" type="string" value="off"/>
+  </property>
+</channel>
+EOF
+    
+    chown -R 1000:1000 /mnt/home/$USERNAME/.config
+    
     arch-chroot /mnt systemctl enable lightdm
     
     log_info "✓ XFCE Desktop installed (minimal) with auto-login"
@@ -396,6 +420,9 @@ install_extras() {
     
     log_step "Installing Development Tools"
     
+    log_info "Syncing package database..."
+    arch-chroot /mnt pacman -Sy
+    
     log_info "Installing build tools..."
     arch-chroot /mnt pacman -S --noconfirm base-devel git wget curl
     
@@ -403,10 +430,14 @@ install_extras() {
     arch-chroot /mnt pacman -S --noconfirm python nodejs npm
     
     log_info "Installing utilities..."
-    arch-chroot /mnt pacman -S --noconfirm htop neofetch
+    arch-chroot /mnt pacman -S --noconfirm htop fastfetch
     
     log_info "Installing browser..."
     arch-chroot /mnt pacman -S --noconfirm firefox
+    
+    log_info "Installing preload for faster app startup..."
+    arch-chroot /mnt pacman -S --noconfirm preload
+    arch-chroot /mnt systemctl enable preload
     
     log_info "✓ Development tools installed"
 }
@@ -447,6 +478,40 @@ net.core.wmem_max = 16777216
 
 # Enable TCP Fast Open
 net.ipv4.tcp_fastopen = 3
+
+# Reduce TIME_WAIT connections
+net.ipv4.tcp_fin_timeout = 15
+net.ipv4.tcp_tw_reuse = 1
+EOF
+    
+    log_info "Enabling CPU frequency scaling..."
+    # Install and enable cpupower for better CPU performance
+    arch-chroot /mnt pacman -S --noconfirm cpupower
+    
+    # Set CPU governor to performance or schedutil
+    cat > /mnt/etc/default/cpupower <<EOF
+# CPU frequency scaling governor
+governor='schedutil'
+EOF
+    
+    arch-chroot /mnt systemctl enable cpupower
+    
+    log_info "Configuring file system optimizations..."
+    # Add noatime to fstab for better disk performance
+    arch-chroot /mnt sed -i 's/relatime/noatime/' /etc/fstab
+    
+    log_info "Disabling unnecessary kernel modules..."
+    cat > /mnt/etc/modprobe.d/blacklist.conf <<EOF
+# Disable unused modules for better performance
+blacklist bluetooth
+blacklist btusb
+EOF
+    
+    log_info "Configuring transparent huge pages..."
+    cat > /mnt/etc/tmpfiles.d/thp.conf <<EOF
+# Enable transparent huge pages for better memory performance
+w /sys/kernel/mm/transparent_hugepage/enabled - - - - madvise
+w /sys/kernel/mm/transparent_hugepage/defrag - - - - defer+madvise
 EOF
     
     log_info "✓ System optimizations applied"
