@@ -362,15 +362,23 @@ install_kiro() {
     log_step "Installing Kiro IDE"
     
     log_info "Downloading Kiro IDE v${KIRO_VERSION}..."
-    arch-chroot /mnt wget -O /tmp/kiro.tar.gz "$KIRO_URL"
+    wget -O /tmp/kiro.tar.gz "$KIRO_URL" || {
+        log_error "Failed to download Kiro IDE"
+        return 1
+    }
     
     log_info "Creating installation directory..."
-    arch-chroot /mnt mkdir -p "$KIRO_INSTALL_DIR"
+    mkdir -p /mnt"$KIRO_INSTALL_DIR"
     
     log_info "Extracting Kiro IDE..."
-    arch-chroot /mnt tar -xzf /tmp/kiro.tar.gz -C "$KIRO_INSTALL_DIR" --strip-components=1
+    tar -xzf /tmp/kiro.tar.gz -C /mnt"$KIRO_INSTALL_DIR" --strip-components=1 || {
+        log_error "Failed to extract Kiro IDE"
+        rm -f /tmp/kiro.tar.gz
+        return 1
+    }
     
     log_info "Creating desktop entry..."
+    mkdir -p /mnt/usr/share/applications
     cat > /mnt/usr/share/applications/kiro.desktop <<EOF
 [Desktop Entry]
 Name=Kiro IDE
@@ -383,13 +391,15 @@ Categories=Development;IDE;
 EOF
     
     log_info "Creating symlink..."
-    arch-chroot /mnt ln -sf "$KIRO_INSTALL_DIR/kiro-ide" /usr/local/bin/kiro
+    mkdir -p /mnt/usr/local/bin
+    ln -sf "$KIRO_INSTALL_DIR/kiro-ide" /mnt/usr/local/bin/kiro
     
     log_info "Setting permissions..."
-    arch-chroot /mnt chmod +x "$KIRO_INSTALL_DIR/kiro-ide"
+    chmod +x /mnt"$KIRO_INSTALL_DIR"/kiro-ide
+    chown -R 1000:1000 /mnt"$KIRO_INSTALL_DIR"
     
     log_info "Cleaning up..."
-    arch-chroot /mnt rm -f /tmp/kiro.tar.gz
+    rm -f /tmp/kiro.tar.gz
     
     log_info "✓ Kiro IDE installed"
     log_info "  Launch with: kiro"
