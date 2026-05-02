@@ -30,15 +30,9 @@ DISK="${DISK:-}"
 BOOT_MODE=""  # Will be detected (BIOS or UEFI)
 
 # Installation Options
-INSTALL_GUI="${INSTALL_GUI:-true}"  # Minimal GUI for Kiro IDE
+INSTALL_GUI="${INSTALL_GUI:-true}"  # XFCE Desktop
 INSTALL_SSH="${INSTALL_SSH:-true}"
 INSTALL_EXTRA="${INSTALL_EXTRA:-true}"  # Dev tools
-INSTALL_KIRO="${INSTALL_KIRO:-true}"
-
-# Kiro IDE Configuration
-KIRO_VERSION="0.11.133"
-KIRO_URL="https://prod.download.desktop.kiro.dev/releases/stable/linux-x64/signed/${KIRO_VERSION}/tar/kiro-ide-${KIRO_VERSION}-stable-linux-x64.tar.gz"
-KIRO_INSTALL_DIR="/opt/kiro"
 
 ################################################################################
 # Colors and Logging
@@ -203,7 +197,7 @@ install_base() {
     log_step "Installing Base System"
     
     log_info "Installing base packages..."
-    pacstrap /mnt base linux linux-firmware nano vim sudo networkmanager wget curl
+    pacstrap /mnt base linux linux-firmware nano vim sudo networkmanager wget curl zram-generator
     
     log_info "Generating fstab..."
     genfstab -U /mnt >> /mnt/etc/fstab
@@ -236,7 +230,15 @@ configure_system() {
 127.0.1.1   ${HOSTNAME}.localdomain ${HOSTNAME}
 EOF
     
-    log_info "✓ System configured"
+    log_info "Configuring zram (compressed RAM)..."
+    # Create zram configuration
+    cat > /mnt/etc/systemd/zram-generator.conf <<EOF
+[zram0]
+zram-size = ram / 2
+compression-algorithm = zstd
+EOF
+    
+    log_info "✓ System configured with zram"
 }
 
 ################################################################################
@@ -315,11 +317,11 @@ install_gui() {
     
     log_step "Installing GUI (XFCE)"
     
-    log_info "Installing Xorg..."
-    arch-chroot /mnt pacman -S --noconfirm xorg
+    log_info "Installing Xorg (minimal)..."
+    arch-chroot /mnt pacman -S --noconfirm xorg-server xorg-xinit
     
-    log_info "Installing XFCE..."
-    arch-chroot /mnt pacman -S --noconfirm xfce4 xfce4-goodies
+    log_info "Installing XFCE (minimal)..."
+    arch-chroot /mnt pacman -S --noconfirm xfce4 xfce4-terminal
     
     log_info "Installing display manager..."
     arch-chroot /mnt pacman -S --noconfirm lightdm lightdm-gtk-greeter
@@ -339,78 +341,13 @@ EOF
     
     arch-chroot /mnt systemctl enable lightdm
     
-    log_info "Installing file manager and utilities..."
-    arch-chroot /mnt pacman -S --noconfirm thunar gvfs
+    log_info "Installing file manager..."
+    arch-chroot /mnt pacman -S --noconfirm thunar
     
-    log_info "✓ XFCE Desktop installed with auto-login"
+    log_info "✓ XFCE Desktop installed (minimal) with auto-login"
 }
 
 ################################################################################
-# Install Kiro IDE (Optional)
-################################################################################
-
-install_kiro() {
-    if [[ "$INSTALL_KIRO" != "true" ]]; then
-        log_info "Skipping Kiro IDE installation"
-        return
-    fi
-    
-    log_step "Installing Kiro IDE"
-    
-    log_info "Downloading Kiro IDE v${KIRO_VERSION}..."
-    if command -v curl &> /dev/null; then
-        curl -L -o /tmp/kiro.tar.gz "$KIRO_URL" || {
-            log_error "Failed to download Kiro IDE"
-            return 1
-        }
-    elif command -v wget &> /dev/null; then
-        wget -O /tmp/kiro.tar.gz "$KIRO_URL" || {
-            log_error "Failed to download Kiro IDE"
-            return 1
-        }
-    else
-        log_error "Neither curl nor wget available"
-        return 1
-    fi
-    
-    log_info "Creating installation directory..."
-    mkdir -p /mnt"$KIRO_INSTALL_DIR"
-    
-    log_info "Extracting Kiro IDE..."
-    tar -xzf /tmp/kiro.tar.gz -C /mnt"$KIRO_INSTALL_DIR" --strip-components=1 || {
-        log_error "Failed to extract Kiro IDE"
-        rm -f /tmp/kiro.tar.gz
-        return 1
-    }
-    
-    log_info "Creating desktop entry..."
-    mkdir -p /mnt/usr/share/applications
-    cat > /mnt/usr/share/applications/kiro.desktop <<EOF
-[Desktop Entry]
-Name=Kiro IDE
-Comment=AI-powered development environment
-Exec=${KIRO_INSTALL_DIR}/kiro-ide
-Icon=${KIRO_INSTALL_DIR}/resources/app/icon.png
-Terminal=false
-Type=Application
-Categories=Development;IDE;
-EOF
-    
-    log_info "Creating symlink..."
-    mkdir -p /mnt/usr/local/bin
-    ln -sf "$KIRO_INSTALL_DIR/kiro-ide" /mnt/usr/local/bin/kiro
-    
-    log_info "Setting permissions..."
-    chmod +x /mnt"$KIRO_INSTALL_DIR"/kiro-ide
-    chown -R 1000:1000 /mnt"$KIRO_INSTALL_DIR"
-    
-    log_info "Cleaning up..."
-    rm -f /tmp/kiro.tar.gz
-    
-    log_info "✓ Kiro IDE installed"
-    log_info "  Launch with: kiro"
-}
-
 ################################################################################
 # Install Extra Packages (Development Tools)
 ################################################################################
@@ -426,15 +363,10 @@ install_extras() {
     arch-chroot /mnt pacman -S --noconfirm base-devel git wget curl
     
     log_info "Installing programming languages..."
-    arch-chroot /mnt pacman -S --noconfirm python python-pip nodejs npm
+    arch-chroot /mnt pacman -S --noconfirm python nodejs npm
     
     log_info "Installing utilities..."
-    arch-chroot /mnt pacman -S --noconfirm htop btop neofetch tree tmux vim-plugins
-    
-    log_info "Installing Docker..."
-    arch-chroot /mnt pacman -S --noconfirm docker docker-compose
-    arch-chroot /mnt systemctl enable docker
-    arch-chroot /mnt usermod -aG docker "$USERNAME"
+    arch-chroot /mnt pacman -S --noconfirm htop neofetch
     
     log_info "✓ Development tools installed"
 }
@@ -482,7 +414,6 @@ main() {
     echo "  Locale: $LOCALE"
     echo "  Install GUI: $INSTALL_GUI"
     echo "  Install SSH: $INSTALL_SSH"
-    echo "  Install Kiro IDE: $INSTALL_KIRO"
     echo ""
     
     preflight_checks
@@ -495,7 +426,6 @@ main() {
     install_bootloader
     install_network
     install_gui
-    install_kiro
     install_extras
     finish_installation
 }
