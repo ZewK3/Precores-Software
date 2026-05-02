@@ -231,14 +231,29 @@ configure_system() {
 EOF
     
     log_info "Configuring zram (compressed RAM)..."
-    # Create zram configuration
+    # Create zram configuration for better memory management
     cat > /mnt/etc/systemd/zram-generator.conf <<EOF
 [zram0]
 zram-size = ram / 2
 compression-algorithm = zstd
+swap-priority = 100
 EOF
     
-    log_info "✓ System configured with zram"
+    log_info "Configuring memory management..."
+    # Optimize memory settings
+    cat > /mnt/etc/sysctl.d/99-vm.conf <<EOF
+# Reduce swappiness (prefer RAM over swap)
+vm.swappiness = 10
+
+# Improve cache pressure
+vm.vfs_cache_pressure = 50
+
+# Dirty ratio for better write performance
+vm.dirty_ratio = 10
+vm.dirty_background_ratio = 5
+EOF
+    
+    log_info "✓ System configured with zram and memory optimizations"
 }
 
 ################################################################################
@@ -323,26 +338,48 @@ install_gui() {
     log_info "Installing XFCE (minimal)..."
     arch-chroot /mnt pacman -S --noconfirm xfce4 xfce4-terminal
     
+    log_info "Installing file manager..."
+    arch-chroot /mnt pacman -S --noconfirm thunar
+    
     log_info "Installing display manager..."
     arch-chroot /mnt pacman -S --noconfirm lightdm lightdm-gtk-greeter
     
     log_info "Configuring auto-login..."
-    # Enable auto-login for user
-    mkdir -p /mnt/etc/lightdm
-    cat > /mnt/etc/lightdm/lightdm.conf <<EOF
+    # Create lightdm config directory
+    mkdir -p /mnt/etc/lightdm/lightdm.conf.d
+    
+    # Configure auto-login properly
+    cat > /mnt/etc/lightdm/lightdm.conf.d/50-autologin.conf <<EOF
 [Seat:*]
 autologin-user=$USERNAME
 autologin-user-timeout=0
+autologin-session=xfce
 EOF
     
     # Add user to autologin group
-    arch-chroot /mnt groupadd -r autologin
+    arch-chroot /mnt groupadd -r autologin || true
     arch-chroot /mnt gpasswd -a $USERNAME autologin
     
-    arch-chroot /mnt systemctl enable lightdm
+    # Configure PAM for autologin
+    cat > /mnt/etc/pam.d/lightdm-autologin <<EOF
+#%PAM-1.0
+auth        sufficient  pam_succeed_if.so user ingroup autologin
+auth        required    pam_permit.so
+account     include     system-local-login
+password    include     system-local-login
+session     include     system-local-login
+EOF
     
-    log_info "Installing file manager..."
-    arch-chroot /mnt pacman -S --noconfirm thunar
+    # Create .xinitrc for the user to start XFCE
+    cat > /mnt/home/$USERNAME/.xinitrc <<EOF
+#!/bin/sh
+exec startxfce4
+EOF
+    
+    chmod +x /mnt/home/$USERNAME/.xinitrc
+    chown 1000:1000 /mnt/home/$USERNAME/.xinitrc
+    
+    arch-chroot /mnt systemctl enable lightdm
     
     log_info "✓ XFCE Desktop installed (minimal) with auto-login"
 }
@@ -368,15 +405,180 @@ install_extras() {
     log_info "Installing utilities..."
     arch-chroot /mnt pacman -S --noconfirm htop neofetch
     
+    log_info "Installing browser..."
+    arch-chroot /mnt pacman -S --noconfirm firefox
+    
     log_info "✓ Development tools installed"
+}
+
+################################################################################
+# System Optimizations
+################################################################################
+
+optimize_system() {
+    log_step "Optimizing System Performance"
+    
+    log_info "Configuring I/O scheduler for better disk performance..."
+    cat > /mnt/etc/udev/rules.d/60-ioschedulers.rules <<EOF
+# Set deadline scheduler for non-rotating disks
+ACTION=="add|change", KERNEL=="sd[a-z]|mmcblk[0-9]*|nvme[0-9]*", ATTR{queue/rotational}=="0", ATTR{queue/scheduler}="mq-deadline"
+# Set BFQ scheduler for rotating disks
+ACTION=="add|change", KERNEL=="sd[a-z]", ATTR{queue/rotational}=="1", ATTR{queue/scheduler}="bfq"
+EOF
+    
+    log_info "Disabling unnecessary services..."
+    # Disable PC speaker beep
+    echo "blacklist pcspkr" > /mnt/etc/modprobe.d/nobeep.conf
+    
+    log_info "Configuring faster boot..."
+    # Reduce systemd timeout
+    mkdir -p /mnt/etc/systemd/system.conf.d
+    cat > /mnt/etc/systemd/system.conf.d/timeout.conf <<EOF
+[Manager]
+DefaultTimeoutStartSec=10s
+DefaultTimeoutStopSec=10s
+EOF
+    
+    log_info "Configuring network optimizations..."
+    cat > /mnt/etc/sysctl.d/99-network.conf <<EOF
+# Increase network buffer sizes
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+
+# Enable TCP Fast Open
+net.ipv4.tcp_fastopen = 3
+EOF
+    
+    log_info "✓ System optimizations applied"
+}
+
+################################################################################
+# Install Firewall
+################################################################################
+
+install_firewall() {
+    log_step "Installing Firewall"
+    
+    log_info "Installing ufw (Uncomplicated Firewall)..."
+    arch-chroot /mnt pacman -S --noconfirm ufw
+    
+    log_info "Configuring firewall rules..."
+    arch-chroot /mnt ufw default deny incoming
+    arch-chroot /mnt ufw default allow outgoing
+    
+    if [[ "$INSTALL_SSH" == "true" ]]; then
+        log_info "Allowing SSH through firewall..."
+        arch-chroot /mnt ufw allow ssh
+    fi
+    
+    log_info "Enabling firewall..."
+    arch-chroot /mnt ufw --force enable
+    arch-chroot /mnt systemctl enable ufw
+    
+    log_info "✓ Firewall configured"
+}
+
+################################################################################
+# Install AUR Helper
+################################################################################
+
+install_aur_helper() {
+    log_step "Installing AUR Helper (yay)"
+    
+    log_info "Installing yay for AUR package management..."
+    
+    # Install as user (not root)
+    arch-chroot /mnt bash -c "cd /tmp && \
+        sudo -u $USERNAME git clone https://aur.archlinux.org/yay.git && \
+        cd yay && \
+        sudo -u $USERNAME makepkg -si --noconfirm"
+    
+    log_info "✓ AUR helper (yay) installed"
 }
 
 ################################################################################
 # Cleanup and Finish
 ################################################################################
 
+create_post_install_script() {
+    log_step "Creating Post-Install Helper Script"
+    
+    log_info "Creating helper script for user..."
+    cat > /mnt/home/$USERNAME/post-install.sh <<'POSTEOF'
+#!/bin/bash
+################################################################################
+# Post-Installation Helper Script
+# Run this after first boot to install additional software
+################################################################################
+
+echo "=== Arch Linux Post-Install Helper ==="
+echo ""
+echo "Available options:"
+echo "1. Install AUR packages (using yay)"
+echo "2. Install Docker"
+echo "3. Install VS Code"
+echo "4. Install Chrome/Chromium"
+echo "5. Update system"
+echo "6. Install all of the above"
+echo "0. Exit"
+echo ""
+read -p "Choose option (0-6): " choice
+
+case $choice in
+    1)
+        echo "Installing popular AUR packages..."
+        yay -S --noconfirm google-chrome visual-studio-code-bin
+        ;;
+    2)
+        echo "Installing Docker..."
+        sudo pacman -S --noconfirm docker docker-compose
+        sudo systemctl enable docker
+        sudo systemctl start docker
+        sudo usermod -aG docker $USER
+        echo "Docker installed! Please logout and login again."
+        ;;
+    3)
+        echo "Installing VS Code..."
+        yay -S --noconfirm visual-studio-code-bin
+        ;;
+    4)
+        echo "Installing Chrome..."
+        yay -S --noconfirm google-chrome
+        ;;
+    5)
+        echo "Updating system..."
+        sudo pacman -Syu --noconfirm
+        ;;
+    6)
+        echo "Installing everything..."
+        sudo pacman -Syu --noconfirm
+        sudo pacman -S --noconfirm docker docker-compose
+        sudo systemctl enable docker
+        sudo systemctl start docker
+        sudo usermod -aG docker $USER
+        yay -S --noconfirm google-chrome visual-studio-code-bin
+        echo "All done! Please logout and login again."
+        ;;
+    0)
+        echo "Exiting..."
+        exit 0
+        ;;
+    *)
+        echo "Invalid option"
+        ;;
+esac
+POSTEOF
+    
+    chmod +x /mnt/home/$USERNAME/post-install.sh
+    chown 1000:1000 /mnt/home/$USERNAME/post-install.sh
+    
+    log_info "✓ Post-install script created at ~/post-install.sh"
+}
+
 finish_installation() {
     log_step "Finishing Installation"
+    
+    create_post_install_script
     
     log_info "Unmounting filesystems..."
     umount -R /mnt || true
@@ -390,6 +592,17 @@ finish_installation() {
     echo "  Password: $PASSWORD"
     echo "  Boot Mode: $BOOT_MODE"
     echo "  Disk: $DISK"
+    echo ""
+    log_info "Features installed:"
+    echo "  ✓ XFCE Desktop with auto-login"
+    echo "  ✓ zram (compressed RAM swap)"
+    echo "  ✓ Firewall (ufw) configured"
+    echo "  ✓ AUR helper (yay) installed"
+    echo "  ✓ System optimizations applied"
+    echo "  ✓ Firefox browser"
+    echo ""
+    log_info "After first boot, run: ~/post-install.sh"
+    log_info "to install additional software (Docker, VS Code, Chrome, etc.)"
     echo ""
     log_warn "Please remove the installation media"
     log_info "System will reboot in 10 seconds..."
@@ -427,6 +640,9 @@ main() {
     install_network
     install_gui
     install_extras
+    optimize_system
+    install_firewall
+    install_aur_helper
     finish_installation
 }
 
