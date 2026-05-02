@@ -30,9 +30,9 @@ DISK="${DISK:-}"
 BOOT_MODE=""  # Will be detected (BIOS or UEFI)
 
 # Installation Options
-INSTALL_GUI="${INSTALL_GUI:-true}"
+INSTALL_GUI="${INSTALL_GUI:-true}"  # Minimal GUI for Kiro IDE
 INSTALL_SSH="${INSTALL_SSH:-true}"
-INSTALL_EXTRA="${INSTALL_EXTRA:-false}"
+INSTALL_EXTRA="${INSTALL_EXTRA:-true}"  # Dev tools
 INSTALL_KIRO="${INSTALL_KIRO:-true}"
 
 # Kiro IDE Configuration
@@ -113,23 +113,15 @@ preflight_checks() {
         DISK="/dev/$(lsblk -d -o NAME,SIZE,TYPE | grep disk | sort -k2 -h | tail -1 | awk '{print $1}')"
         log_warn "Auto-detected disk: $DISK"
         
-        # Confirmation
-        read -p "Use $DISK for installation? (yes/no): " -r
-        if [[ ! $REPLY =~ ^[Yy]es$ ]]; then
-            log_error "Installation cancelled by user"
-            exit 1
-        fi
+        # Auto-confirm in unattended mode
+        log_info "✓ Using disk: $DISK (auto-confirmed)"
     fi
     
     log_info "✓ Installation disk: $DISK"
     
-    # Final confirmation
+    # Auto-confirm warning in unattended mode
     log_warn "WARNING: All data on $DISK will be DESTROYED!"
-    read -p "Continue with installation? (yes/no): " -r
-    if [[ ! $REPLY =~ ^[Yy]es$ ]]; then
-        log_error "Installation cancelled by user"
-        exit 1
-    fi
+    log_info "✓ Proceeding with installation (auto-confirmed)"
 }
 
 ################################################################################
@@ -211,7 +203,7 @@ install_base() {
     log_step "Installing Base System"
     
     log_info "Installing base packages..."
-    pacstrap /mnt base linux linux-firmware nano vim sudo networkmanager
+    pacstrap /mnt base linux linux-firmware nano vim sudo networkmanager wget curl
     
     log_info "Generating fstab..."
     genfstab -U /mnt >> /mnt/etc/fstab
@@ -312,28 +304,49 @@ install_network() {
 }
 
 ################################################################################
-# Install GUI (Optional)
+# Install GUI (Optional - Minimal for Kiro IDE)
 ################################################################################
 
 install_gui() {
     if [[ "$INSTALL_GUI" != "true" ]]; then
-        log_info "Skipping GUI installation"
+        log_info "Skipping GUI installation (minimal system)"
         return
     fi
     
-    log_step "Installing GUI (XFCE)"
+    log_step "Installing Minimal GUI"
     
-    log_info "Installing Xorg..."
-    arch-chroot /mnt pacman -S --noconfirm xorg
+    log_info "Installing Xorg (minimal)..."
+    arch-chroot /mnt pacman -S --noconfirm xorg-server xorg-xinit xorg-xrandr
     
-    log_info "Installing XFCE..."
-    arch-chroot /mnt pacman -S --noconfirm xfce4 xfce4-goodies
+    log_info "Installing i3 window manager (lightweight)..."
+    arch-chroot /mnt pacman -S --noconfirm i3-wm i3status dmenu
     
-    log_info "Installing display manager..."
-    arch-chroot /mnt pacman -S --noconfirm lightdm lightdm-gtk-greeter
-    arch-chroot /mnt systemctl enable lightdm
+    log_info "Installing terminal..."
+    arch-chroot /mnt pacman -S --noconfirm alacritty
     
-    log_info "✓ GUI installed"
+    log_info "Installing Electron app dependencies..."
+    arch-chroot /mnt pacman -S --noconfirm gtk3 nss alsa-lib libxss
+    
+    log_info "Configuring auto-start X..."
+    # Auto-start X on login for user
+    cat > /mnt/home/$USERNAME/.xinitrc <<'EOF'
+#!/bin/sh
+exec i3
+EOF
+    chmod +x /mnt/home/$USERNAME/.xinitrc
+    
+    # Auto-login and start X
+    mkdir -p /mnt/etc/systemd/system/getty@tty1.service.d
+    cat > /mnt/etc/systemd/system/getty@tty1.service.d/autologin.conf <<EOF
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty -o '-p -f -- \\u' --noclear --autologin $USERNAME %I \$TERM
+EOF
+    
+    # Start X automatically after login
+    echo '[[ -z $DISPLAY && $XDG_VTNR -eq 1 ]] && exec startx' >> /mnt/home/$USERNAME/.bash_profile
+    
+    log_info "✓ Minimal GUI installed with auto-start"
 }
 
 ################################################################################
@@ -383,7 +396,7 @@ EOF
 }
 
 ################################################################################
-# Install Extra Packages (Optional)
+# Install Extra Packages (Development Tools)
 ################################################################################
 
 install_extras() {
@@ -391,15 +404,23 @@ install_extras() {
         return
     fi
     
-    log_step "Installing Extra Packages"
+    log_step "Installing Development Tools"
     
-    log_info "Installing development tools..."
+    log_info "Installing build tools..."
     arch-chroot /mnt pacman -S --noconfirm base-devel git wget curl
     
-    log_info "Installing utilities..."
-    arch-chroot /mnt pacman -S --noconfirm htop neofetch tree
+    log_info "Installing programming languages..."
+    arch-chroot /mnt pacman -S --noconfirm python python-pip nodejs npm
     
-    log_info "✓ Extra packages installed"
+    log_info "Installing utilities..."
+    arch-chroot /mnt pacman -S --noconfirm htop btop neofetch tree tmux vim-plugins
+    
+    log_info "Installing Docker..."
+    arch-chroot /mnt pacman -S --noconfirm docker docker-compose
+    arch-chroot /mnt systemctl enable docker
+    arch-chroot /mnt usermod -aG docker "$USERNAME"
+    
+    log_info "✓ Development tools installed"
 }
 
 ################################################################################
@@ -422,13 +443,13 @@ finish_installation() {
     echo "  Boot Mode: $BOOT_MODE"
     echo "  Disk: $DISK"
     echo ""
-    log_warn "Please remove the installation media and reboot"
+    log_warn "Please remove the installation media"
+    log_info "System will reboot in 10 seconds..."
     echo ""
     
-    read -p "Reboot now? (yes/no): " -r
-    if [[ $REPLY =~ ^[Yy]es$ ]]; then
-        reboot
-    fi
+    # Auto-reboot after 10 seconds
+    sleep 10
+    reboot
 }
 
 ################################################################################
