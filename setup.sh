@@ -304,49 +304,45 @@ install_network() {
 }
 
 ################################################################################
-# Install GUI (Optional - Minimal for Kiro IDE)
+# Install GUI (XFCE Desktop)
 ################################################################################
 
 install_gui() {
     if [[ "$INSTALL_GUI" != "true" ]]; then
-        log_info "Skipping GUI installation (minimal system)"
+        log_info "Skipping GUI installation"
         return
     fi
     
-    log_step "Installing Minimal GUI"
+    log_step "Installing GUI (XFCE)"
     
-    log_info "Installing Xorg (minimal)..."
-    arch-chroot /mnt pacman -S --noconfirm xorg-server xorg-xinit xorg-xrandr
+    log_info "Installing Xorg..."
+    arch-chroot /mnt pacman -S --noconfirm xorg
     
-    log_info "Installing i3 window manager (lightweight)..."
-    arch-chroot /mnt pacman -S --noconfirm i3-wm i3status dmenu
+    log_info "Installing XFCE..."
+    arch-chroot /mnt pacman -S --noconfirm xfce4 xfce4-goodies
     
-    log_info "Installing terminal..."
-    arch-chroot /mnt pacman -S --noconfirm alacritty
+    log_info "Installing display manager..."
+    arch-chroot /mnt pacman -S --noconfirm lightdm lightdm-gtk-greeter
     
-    log_info "Installing Electron app dependencies..."
-    arch-chroot /mnt pacman -S --noconfirm gtk3 nss alsa-lib libxss
-    
-    log_info "Configuring auto-start X..."
-    # Auto-start X on login for user
-    cat > /mnt/home/$USERNAME/.xinitrc <<'EOF'
-#!/bin/sh
-exec i3
-EOF
-    chmod +x /mnt/home/$USERNAME/.xinitrc
-    
-    # Auto-login and start X
-    mkdir -p /mnt/etc/systemd/system/getty@tty1.service.d
-    cat > /mnt/etc/systemd/system/getty@tty1.service.d/autologin.conf <<EOF
-[Service]
-ExecStart=
-ExecStart=-/sbin/agetty -o '-p -f -- \\u' --noclear --autologin $USERNAME %I \$TERM
+    log_info "Configuring auto-login..."
+    # Enable auto-login for user
+    mkdir -p /mnt/etc/lightdm
+    cat > /mnt/etc/lightdm/lightdm.conf <<EOF
+[Seat:*]
+autologin-user=$USERNAME
+autologin-user-timeout=0
 EOF
     
-    # Start X automatically after login
-    echo '[[ -z $DISPLAY && $XDG_VTNR -eq 1 ]] && exec startx' >> /mnt/home/$USERNAME/.bash_profile
+    # Add user to autologin group
+    arch-chroot /mnt groupadd -r autologin
+    arch-chroot /mnt gpasswd -a $USERNAME autologin
     
-    log_info "✓ Minimal GUI installed with auto-start"
+    arch-chroot /mnt systemctl enable lightdm
+    
+    log_info "Installing file manager and utilities..."
+    arch-chroot /mnt pacman -S --noconfirm thunar gvfs
+    
+    log_info "✓ XFCE Desktop installed with auto-login"
 }
 
 ################################################################################
@@ -362,10 +358,20 @@ install_kiro() {
     log_step "Installing Kiro IDE"
     
     log_info "Downloading Kiro IDE v${KIRO_VERSION}..."
-    wget -O /tmp/kiro.tar.gz "$KIRO_URL" || {
-        log_error "Failed to download Kiro IDE"
+    if command -v curl &> /dev/null; then
+        curl -L -o /tmp/kiro.tar.gz "$KIRO_URL" || {
+            log_error "Failed to download Kiro IDE"
+            return 1
+        }
+    elif command -v wget &> /dev/null; then
+        wget -O /tmp/kiro.tar.gz "$KIRO_URL" || {
+            log_error "Failed to download Kiro IDE"
+            return 1
+        }
+    else
+        log_error "Neither curl nor wget available"
         return 1
-    }
+    fi
     
     log_info "Creating installation directory..."
     mkdir -p /mnt"$KIRO_INSTALL_DIR"
