@@ -435,10 +435,6 @@ install_extras() {
     log_info "Installing browser..."
     arch-chroot /mnt pacman -S --noconfirm firefox
     
-    log_info "Installing preload for faster app startup..."
-    arch-chroot /mnt pacman -S --noconfirm preload
-    arch-chroot /mnt systemctl enable preload
-    
     log_info "✓ Development tools installed"
 }
 
@@ -448,6 +444,9 @@ install_extras() {
 
 optimize_system() {
     log_step "Optimizing System Performance"
+    
+    # Disable exit on error for optional optimizations
+    set +e
     
     log_info "Configuring I/O scheduler for better disk performance..."
     cat > /mnt/etc/udev/rules.d/60-ioschedulers.rules <<EOF
@@ -485,20 +484,22 @@ net.ipv4.tcp_tw_reuse = 1
 EOF
     
     log_info "Enabling CPU frequency scaling..."
-    # Install and enable cpupower for better CPU performance
-    arch-chroot /mnt pacman -S --noconfirm cpupower
-    
-    # Set CPU governor to performance or schedutil
-    cat > /mnt/etc/default/cpupower <<EOF
+    # Install and enable cpupower for better CPU performance (optional)
+    if arch-chroot /mnt pacman -S --noconfirm cpupower 2>/dev/null; then
+        # Set CPU governor to schedutil
+        cat > /mnt/etc/default/cpupower <<EOF
 # CPU frequency scaling governor
 governor='schedutil'
 EOF
-    
-    arch-chroot /mnt systemctl enable cpupower
+        arch-chroot /mnt systemctl enable cpupower
+        log_info "✓ CPU frequency scaling enabled"
+    else
+        log_warn "cpupower not available, skipping CPU frequency scaling"
+    fi
     
     log_info "Configuring file system optimizations..."
     # Add noatime to fstab for better disk performance
-    arch-chroot /mnt sed -i 's/relatime/noatime/' /etc/fstab
+    arch-chroot /mnt sed -i 's/relatime/noatime/' /etc/fstab || true
     
     log_info "Disabling unnecessary kernel modules..."
     cat > /mnt/etc/modprobe.d/blacklist.conf <<EOF
@@ -513,6 +514,9 @@ EOF
 w /sys/kernel/mm/transparent_hugepage/enabled - - - - madvise
 w /sys/kernel/mm/transparent_hugepage/defrag - - - - defer+madvise
 EOF
+    
+    # Re-enable exit on error
+    set -e
     
     log_info "✓ System optimizations applied"
 }
@@ -550,15 +554,26 @@ install_firewall() {
 install_aur_helper() {
     log_step "Installing AUR Helper (yay)"
     
+    # Disable exit on error for optional AUR helper
+    set +e
+    
     log_info "Installing yay for AUR package management..."
     
-    # Install as user (not root)
+    # Install as user (not root) with error handling
     arch-chroot /mnt bash -c "cd /tmp && \
-        sudo -u $USERNAME git clone https://aur.archlinux.org/yay.git && \
+        sudo -u $USERNAME git clone https://aur.archlinux.org/yay.git 2>/dev/null && \
         cd yay && \
-        sudo -u $USERNAME makepkg -si --noconfirm"
+        sudo -u $USERNAME makepkg -si --noconfirm" 2>/dev/null
     
-    log_info "✓ AUR helper (yay) installed"
+    if [ $? -eq 0 ]; then
+        log_info "✓ AUR helper (yay) installed"
+    else
+        log_warn "Failed to install yay, you can install it manually later"
+        log_warn "Run: git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si"
+    fi
+    
+    # Re-enable exit on error
+    set -e
 }
 
 ################################################################################
@@ -638,6 +653,126 @@ POSTEOF
     chown 1000:1000 /mnt/home/$USERNAME/post-install.sh
     
     log_info "✓ Post-install script created at ~/post-install.sh"
+    
+    log_info "Creating QuickFix wrapper script..."
+    # Create QuickFix wrapper that auto-updates from GitHub
+    cat > /mnt/home/$USERNAME/QuickFix.sh <<'QUICKEOF'
+#!/bin/bash
+################################################################################
+# QuickFix - System Fix & Update Tool (Auto-Update Wrapper)
+# 
+# This wrapper automatically downloads the latest version from GitHub
+# and executes it with version checking
+################################################################################
+
+# GitHub Configuration
+GITHUB_USER="ZewK3"
+GITHUB_REPO="Precores-Software"
+GITHUB_BRANCH="main"
+REMOTE_SCRIPT="QuiclFix.sh"
+REMOTE_URL="https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/refs/heads/${GITHUB_BRANCH}/${REMOTE_SCRIPT}"
+
+# Local paths
+LOCAL_SCRIPT="/tmp/QuickFix_remote.sh"
+VERSION_FILE="$HOME/.quickfix_version"
+
+# Colors
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+echo -e "${BLUE}╔════════════════════════════════════════════════════════╗${NC}"
+echo -e "${BLUE}║              QuickFix - System Repair Tool            ║${NC}"
+echo -e "${BLUE}╚════════════════════════════════════════════════════════╝${NC}"
+echo ""
+
+# Check internet connection
+echo -e "${YELLOW}[INFO]${NC} Checking for updates..."
+if ! ping -c 1 github.com &> /dev/null; then
+    echo -e "${RED}[ERROR]${NC} No internet connection"
+    echo -e "${YELLOW}[INFO]${NC} Running offline mode (if available)"
+    
+    if [ -f "$LOCAL_SCRIPT" ]; then
+        bash "$LOCAL_SCRIPT" "$@"
+        exit $?
+    else
+        echo -e "${RED}[ERROR]${NC} No cached version available"
+        echo "Please check your internet connection and try again"
+        exit 1
+    fi
+fi
+
+# Download latest version
+echo -e "${YELLOW}[INFO]${NC} Downloading latest version from GitHub..."
+if curl -f -s -o "$LOCAL_SCRIPT" "$REMOTE_URL" 2>/dev/null; then
+    chmod +x "$LOCAL_SCRIPT"
+    
+    # Extract version from remote script (if exists)
+    REMOTE_VERSION=$(grep -oP '(?<=VERSION=")[^"]+' "$LOCAL_SCRIPT" 2>/dev/null || echo "unknown")
+    LOCAL_VERSION=$(cat "$VERSION_FILE" 2>/dev/null || echo "none")
+    
+    if [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ] && [ "$REMOTE_VERSION" != "unknown" ]; then
+        echo -e "${GREEN}[INFO]${NC} New version available: $REMOTE_VERSION (current: $LOCAL_VERSION)"
+        echo "$REMOTE_VERSION" > "$VERSION_FILE"
+    else
+        echo -e "${GREEN}[INFO]${NC} You have the latest version"
+    fi
+    
+    # Execute the remote script
+    echo -e "${BLUE}[INFO]${NC} Starting QuickFix..."
+    echo ""
+    bash "$LOCAL_SCRIPT" "$@"
+    EXIT_CODE=$?
+    
+    # Cleanup
+    # Keep the script for offline use
+    
+    exit $EXIT_CODE
+else
+    echo -e "${RED}[ERROR]${NC} Failed to download from GitHub"
+    echo "URL: $REMOTE_URL"
+    
+    # Try to use cached version
+    if [ -f "$LOCAL_SCRIPT" ]; then
+        echo -e "${YELLOW}[INFO]${NC} Using cached version"
+        bash "$LOCAL_SCRIPT" "$@"
+        exit $?
+    else
+        echo -e "${RED}[ERROR]${NC} No cached version available"
+        exit 1
+    fi
+fi
+QUICKEOF
+    
+    chmod +x /mnt/home/$USERNAME/QuickFix.sh
+    chown 1000:1000 /mnt/home/$USERNAME/QuickFix.sh
+    log_info "✓ QuickFix wrapper created at ~/QuickFix.sh"
+    
+    log_info "Downloading QuickInstall script..."
+    # Download QuickInstall.sh from GitHub
+    arch-chroot /mnt bash -c "curl -o /home/$USERNAME/QuickInstall.sh https://raw.githubusercontent.com/ZewK3/Precores-Software/refs/heads/main/QuickInstall.sh 2>/dev/null"
+    
+    if [ -f /mnt/home/$USERNAME/QuickInstall.sh ]; then
+        chmod +x /mnt/home/$USERNAME/QuickInstall.sh
+        chown 1000:1000 /mnt/home/$USERNAME/QuickInstall.sh
+        log_info "✓ QuickInstall script downloaded at ~/QuickInstall.sh"
+    else
+        log_warn "Failed to download QuickInstall.sh, will be available after reboot"
+    fi
+    
+    log_info "Downloading SystemManager script..."
+    # Download SystemManager.sh from GitHub
+    arch-chroot /mnt bash -c "curl -o /home/$USERNAME/SystemManager.sh https://raw.githubusercontent.com/ZewK3/Precores-Software/refs/heads/main/SystemManager.sh 2>/dev/null"
+    
+    if [ -f /mnt/home/$USERNAME/SystemManager.sh ]; then
+        chmod +x /mnt/home/$USERNAME/SystemManager.sh
+        chown 1000:1000 /mnt/home/$USERNAME/SystemManager.sh
+        log_info "✓ SystemManager script downloaded at ~/SystemManager.sh"
+    else
+        log_warn "Failed to download SystemManager.sh"
+    fi
 }
 
 finish_installation() {
@@ -666,8 +801,16 @@ finish_installation() {
     echo "  ✓ System optimizations applied"
     echo "  ✓ Firefox browser"
     echo ""
-    log_info "After first boot, run: ~/post-install.sh"
-    log_info "to install additional software (Docker, VS Code, Chrome, etc.)"
+    log_info "Helper scripts available:"
+    echo "  • ~/post-install.sh    - Install additional software (simple menu)"
+    echo "  • ~/QuickInstall.sh    - Fast app installer (20+ apps)"
+    echo "  • ~/QuickFix.sh        - System repair & fix tool"
+    echo "  • ~/SystemManager.sh   - System monitoring & updates"
+    echo ""
+    log_info "After first boot, you can run:"
+    echo "  ./QuickInstall.sh    - Install apps with interactive menu"
+    echo "  ./QuickFix.sh        - Fix or update system configuration"
+    echo "  ./SystemManager.sh   - Monitor system & check for updates"
     echo ""
     log_warn "Please remove the installation media"
     log_info "System will reboot in 10 seconds..."
