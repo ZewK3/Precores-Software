@@ -1,14 +1,13 @@
 #!/bin/bash
 ################################################################################
-# Arch Linux Auto-Install Script
+# Arch Linux Ultra-Optimized Auto-Install Script
 # 
-# This script performs a fully automated Arch Linux installation with:
-# - Automatic disk detection and partitioning
-# - Base system installation
-# - User creation and configuration
-# - GRUB bootloader (BIOS/UEFI)
-# - XFCE desktop environment
-# - Network and SSH configuration
+# Features:
+# - 100% Automated (no user input required)
+# - Ultra-lightweight (minimal RAM usage)
+# - Silent installation with progress bar
+# - Optimized for performance
+# - Removes unnecessary services and packages
 ################################################################################
 
 set -e  # Exit on error
@@ -25,42 +24,74 @@ PASSWORD="${PASSWORD:-123123}"
 TIMEZONE="${TIMEZONE:-Asia/Ho_Chi_Minh}"
 LOCALE="${LOCALE:-en_US.UTF-8}"
 
-# Disk Configuration (auto-detect if not set)
+# Disk Configuration (auto-detect)
 DISK="${DISK:-}"
-BOOT_MODE=""  # Will be detected (BIOS or UEFI)
+BOOT_MODE=""
 
 # Installation Options
-INSTALL_GUI="${INSTALL_GUI:-true}"  # XFCE Desktop
+INSTALL_GUI="${INSTALL_GUI:-true}"
 INSTALL_SSH="${INSTALL_SSH:-true}"
-INSTALL_EXTRA="${INSTALL_EXTRA:-true}"  # Dev tools
+
+# Silent mode (hide all logs except errors)
+SILENT_MODE=true
+LOG_FILE="/tmp/arch-install.log"
 
 ################################################################################
-# Colors and Logging
+# Progress Bar System
 ################################################################################
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+TOTAL_STEPS=20
+CURRENT_STEP=0
+PROGRESS_BAR_WIDTH=50
 
-log_info() {
-    echo -e "${GREEN}[INFO]${NC} $1"
-}
-
-log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-log_step() {
+# Initialize progress
+init_progress() {
+    clear
+    echo "╔════════════════════════════════════════════════════════════════╗"
+    echo "║     Arch Linux Ultra-Optimized Installation - Silent Mode     ║"
+    echo "╚════════════════════════════════════════════════════════════════╝"
     echo ""
-    echo -e "${BLUE}========================================${NC}"
-    echo -e "${BLUE}  $1${NC}"
-    echo -e "${BLUE}========================================${NC}"
+    > "$LOG_FILE"  # Clear log file
+}
+
+# Update progress bar
+update_progress() {
+    local step_name="$1"
+    CURRENT_STEP=$((CURRENT_STEP + 1))
+    local percent=$((CURRENT_STEP * 100 / TOTAL_STEPS))
+    local filled=$((CURRENT_STEP * PROGRESS_BAR_WIDTH / TOTAL_STEPS))
+    local empty=$((PROGRESS_BAR_WIDTH - filled))
+    
+    # Clear previous line and draw progress bar
+    printf "\r\033[K"
+    printf "["
+    printf "%${filled}s" | tr ' ' '█'
+    printf "%${empty}s" | tr ' ' '░'
+    printf "] %3d%% - %s" "$percent" "$step_name"
+}
+
+# Log to file (silent)
+log_silent() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
+}
+
+# Show error and exit
+show_error() {
+    echo ""
+    echo ""
+    echo "╔════════════════════════════════════════════════════════════════╗"
+    echo "║                         ERROR OCCURRED                         ║"
+    echo "╚════════════════════════════════════════════════════════════════╝"
+    echo ""
+    echo "Error: $1"
+    echo ""
+    echo "Last 20 lines of log:"
+    echo "─────────────────────────────────────────────────────────────────"
+    tail -20 "$LOG_FILE"
+    echo "─────────────────────────────────────────────────────────────────"
+    echo ""
+    echo "Full log: $LOG_FILE"
+    exit 1
 }
 
 ################################################################################
@@ -68,54 +99,32 @@ log_step() {
 ################################################################################
 
 preflight_checks() {
-    log_step "Pre-flight Checks"
+    update_progress "Pre-flight checks"
     
-    # Check if running as root
+    # Check root
     if [[ $EUID -ne 0 ]]; then
-        log_error "This script must be run as root"
-        exit 1
+        show_error "This script must be run as root"
     fi
     
-    # Check internet connection
-    log_info "Checking internet connection..."
-    if ping -c 1 archlinux.org &> /dev/null; then
-        log_info "✓ Internet connection OK"
-    else
-        log_error "No internet connection. Please check network."
-        exit 1
+    # Check internet
+    if ! ping -c 1 archlinux.org &>/dev/null; then
+        show_error "No internet connection"
     fi
+    log_silent "Internet connection OK"
     
     # Detect boot mode
     if [[ -d /sys/firmware/efi/efivars ]]; then
         BOOT_MODE="UEFI"
-        log_info "✓ Boot mode: UEFI"
     else
         BOOT_MODE="BIOS"
-        log_info "✓ Boot mode: BIOS"
     fi
+    log_silent "Boot mode: $BOOT_MODE"
     
-    # Auto-detect disk if not specified
+    # Auto-detect disk
     if [[ -z "$DISK" ]]; then
-        log_info "Auto-detecting installation disk..."
-        
-        # List available disks
-        echo ""
-        lsblk -d -o NAME,SIZE,TYPE | grep disk
-        echo ""
-        
-        # Try to find the largest disk
         DISK="/dev/$(lsblk -d -o NAME,SIZE,TYPE | grep disk | sort -k2 -h | tail -1 | awk '{print $1}')"
-        log_warn "Auto-detected disk: $DISK"
-        
-        # Auto-confirm in unattended mode
-        log_info "✓ Using disk: $DISK (auto-confirmed)"
     fi
-    
-    log_info "✓ Installation disk: $DISK"
-    
-    # Auto-confirm warning in unattended mode
-    log_warn "WARNING: All data on $DISK will be DESTROYED!"
-    log_info "✓ Proceeding with installation (auto-confirmed)"
+    log_silent "Installation disk: $DISK"
 }
 
 ################################################################################
@@ -123,86 +132,92 @@ preflight_checks() {
 ################################################################################
 
 partition_disk() {
-    log_step "Disk Partitioning"
+    update_progress "Partitioning disk"
     
-    log_info "Wiping disk $DISK..."
-    wipefs -a "$DISK"
-    
-    if [[ "$BOOT_MODE" == "UEFI" ]]; then
-        log_info "Creating GPT partition table (UEFI)..."
-        parted -s "$DISK" mklabel gpt
-        parted -s "$DISK" mkpart primary fat32 1MiB 512MiB
-        parted -s "$DISK" set 1 esp on
-        parted -s "$DISK" mkpart primary ext4 512MiB 100%
+    {
+        wipefs -a "$DISK"
         
-        BOOT_PART="${DISK}1"
-        ROOT_PART="${DISK}2"
-    else
-        log_info "Creating MBR partition table (BIOS)..."
-        parted -s "$DISK" mklabel msdos
-        parted -s "$DISK" mkpart primary ext4 1MiB 100%
+        if [[ "$BOOT_MODE" == "UEFI" ]]; then
+            parted -s "$DISK" mklabel gpt
+            parted -s "$DISK" mkpart primary fat32 1MiB 512MiB
+            parted -s "$DISK" set 1 esp on
+            parted -s "$DISK" mkpart primary ext4 512MiB 100%
+            
+            BOOT_PART="${DISK}1"
+            ROOT_PART="${DISK}2"
+        else
+            parted -s "$DISK" mklabel msdos
+            parted -s "$DISK" mkpart primary ext4 1MiB 100%
+            
+            ROOT_PART="${DISK}1"
+        fi
         
-        ROOT_PART="${DISK}1"
-    fi
+        partprobe "$DISK"
+        sleep 2
+    } >> "$LOG_FILE" 2>&1 || show_error "Disk partitioning failed"
     
-    log_info "Reloading partition table..."
-    partprobe "$DISK"
-    sleep 2
-    
-    log_info "✓ Partitioning complete"
+    log_silent "Partitioning complete"
 }
 
 ################################################################################
-# Filesystem Creation
+# Format Partitions
 ################################################################################
 
 format_partitions() {
-    log_step "Formatting Partitions"
+    update_progress "Formatting partitions"
     
-    if [[ "$BOOT_MODE" == "UEFI" ]]; then
-        log_info "Formatting EFI partition..."
-        mkfs.fat -F32 "$BOOT_PART"
-    fi
+    {
+        if [[ "$BOOT_MODE" == "UEFI" ]]; then
+            mkfs.fat -F32 "$BOOT_PART"
+        fi
+        
+        mkfs.ext4 -F "$ROOT_PART"
+    } >> "$LOG_FILE" 2>&1 || show_error "Formatting failed"
     
-    log_info "Formatting root partition..."
-    mkfs.ext4 -F "$ROOT_PART"
-    
-    log_info "✓ Formatting complete"
+    log_silent "Formatting complete"
 }
 
 ################################################################################
-# Mount Filesystems
+# Mount Partitions
 ################################################################################
 
 mount_partitions() {
-    log_step "Mounting Partitions"
+    update_progress "Mounting partitions"
     
-    log_info "Mounting root partition..."
-    mount "$ROOT_PART" /mnt
+    {
+        mount "$ROOT_PART" /mnt
+        
+        if [[ "$BOOT_MODE" == "UEFI" ]]; then
+            mkdir -p /mnt/boot
+            mount "$BOOT_PART" /mnt/boot
+        fi
+    } >> "$LOG_FILE" 2>&1 || show_error "Mounting failed"
     
-    if [[ "$BOOT_MODE" == "UEFI" ]]; then
-        log_info "Mounting EFI partition..."
-        mkdir -p /mnt/boot
-        mount "$BOOT_PART" /mnt/boot
-    fi
-    
-    log_info "✓ Mounting complete"
+    log_silent "Mounting complete"
 }
 
 ################################################################################
-# Install Base System
+# Install Base System (Ultra-Minimal)
 ################################################################################
 
 install_base() {
-    log_step "Installing Base System"
+    update_progress "Installing base system"
     
-    log_info "Installing base packages..."
-    pacstrap /mnt base linux linux-firmware nano vim sudo networkmanager wget curl zram-generator
+    # Ultra-minimal package list (only essentials)
+    local base_packages="base linux linux-firmware"
     
-    log_info "Generating fstab..."
-    genfstab -U /mnt >> /mnt/etc/fstab
+    # Add only necessary packages
+    base_packages="$base_packages nano sudo networkmanager"
     
-    log_info "✓ Base system installed"
+    # Add zram for memory optimization
+    base_packages="$base_packages zram-generator"
+    
+    {
+        pacstrap /mnt $base_packages
+        genfstab -U /mnt >> /mnt/etc/fstab
+    } >> "$LOG_FILE" 2>&1 || show_error "Base installation failed"
+    
+    log_silent "Base system installed"
 }
 
 ################################################################################
@@ -210,57 +225,54 @@ install_base() {
 ################################################################################
 
 configure_system() {
-    log_step "Configuring System"
+    update_progress "Configuring system"
     
-    log_info "Setting timezone..."
-    arch-chroot /mnt ln -sf "/usr/share/zoneinfo/$TIMEZONE" /etc/localtime
-    arch-chroot /mnt hwclock --systohc
-    
-    log_info "Setting locale..."
-    arch-chroot /mnt sed -i "s/^#${LOCALE}/${LOCALE}/" /etc/locale.gen
-    arch-chroot /mnt locale-gen
-    echo "LANG=$LOCALE" > /mnt/etc/locale.conf
-    
-    log_info "Setting hostname..."
-    echo "$HOSTNAME" > /mnt/etc/hostname
-    
-    cat > /mnt/etc/hosts <<EOF
+    {
+        # Timezone
+        arch-chroot /mnt ln -sf "/usr/share/zoneinfo/$TIMEZONE" /etc/localtime
+        arch-chroot /mnt hwclock --systohc
+        
+        # Locale
+        arch-chroot /mnt sed -i "s/^#${LOCALE}/${LOCALE}/" /etc/locale.gen
+        arch-chroot /mnt locale-gen
+        echo "LANG=$LOCALE" > /mnt/etc/locale.conf
+        
+        # Hostname
+        echo "$HOSTNAME" > /mnt/etc/hostname
+        cat > /mnt/etc/hosts <<EOF
 127.0.0.1   localhost
 ::1         localhost
 127.0.1.1   ${HOSTNAME}.localdomain ${HOSTNAME}
 EOF
-    
-    log_info "Configuring zram (compressed RAM)..."
-    # Create zram configuration for better memory management
-    cat > /mnt/etc/systemd/zram-generator.conf <<EOF
+        
+        # ZRAM configuration (compressed RAM for better memory usage)
+        cat > /mnt/etc/systemd/zram-generator.conf <<EOF
 [zram0]
 zram-size = ram / 2
 compression-algorithm = zstd
 swap-priority = 100
 EOF
-    
-    log_info "Configuring memory management..."
-    # Optimize memory settings
-    cat > /mnt/etc/sysctl.d/99-vm.conf <<EOF
-# Reduce swappiness (prefer RAM over swap)
-vm.swappiness = 10
-
-# Improve cache pressure
-vm.vfs_cache_pressure = 50
-
-# Dirty ratio for better write performance
-vm.dirty_ratio = 10
-vm.dirty_background_ratio = 5
-
-# Increase file descriptor limits
+        
+        # Ultra-aggressive memory optimization
+        cat > /mnt/etc/sysctl.d/99-vm-ultra.conf <<EOF
+# Ultra-aggressive memory optimization
+vm.swappiness = 5
+vm.vfs_cache_pressure = 30
+vm.dirty_ratio = 5
+vm.dirty_background_ratio = 3
+vm.min_free_kbytes = 8192
+vm.overcommit_memory = 1
+vm.overcommit_ratio = 80
 fs.file-max = 2097152
 
-# Optimize memory allocation
-vm.overcommit_memory = 1
-vm.overcommit_ratio = 50
+# Disable unnecessary features
+kernel.nmi_watchdog = 0
+kernel.printk = 3 3 3 3
 EOF
+        
+    } >> "$LOG_FILE" 2>&1 || show_error "System configuration failed"
     
-    log_info "✓ System configured with zram and memory optimizations"
+    log_silent "System configured"
 }
 
 ################################################################################
@@ -268,19 +280,16 @@ EOF
 ################################################################################
 
 configure_users() {
-    log_step "Configuring Users"
+    update_progress "Configuring users"
     
-    log_info "Setting root password..."
-    echo "root:$PASSWORD" | arch-chroot /mnt chpasswd
+    {
+        echo "root:$PASSWORD" | arch-chroot /mnt chpasswd
+        arch-chroot /mnt useradd -m -G wheel -s /bin/bash "$USERNAME"
+        echo "$USERNAME:$PASSWORD" | arch-chroot /mnt chpasswd
+        arch-chroot /mnt sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers
+    } >> "$LOG_FILE" 2>&1 || show_error "User configuration failed"
     
-    log_info "Creating user $USERNAME..."
-    arch-chroot /mnt useradd -m -G wheel -s /bin/bash "$USERNAME"
-    echo "$USERNAME:$PASSWORD" | arch-chroot /mnt chpasswd
-    
-    log_info "Configuring sudo..."
-    arch-chroot /mnt sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers
-    
-    log_info "✓ Users configured"
+    log_silent "Users configured"
 }
 
 ################################################################################
@@ -288,87 +297,77 @@ configure_users() {
 ################################################################################
 
 install_bootloader() {
-    log_step "Installing Bootloader"
+    update_progress "Installing bootloader"
     
-    log_info "Installing GRUB..."
-    arch-chroot /mnt pacman -S --noconfirm grub
+    {
+        arch-chroot /mnt pacman -S --noconfirm grub
+        
+        if [[ "$BOOT_MODE" == "UEFI" ]]; then
+            arch-chroot /mnt pacman -S --noconfirm efibootmgr
+            arch-chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
+        else
+            arch-chroot /mnt grub-install --target=i386-pc "$DISK"
+        fi
+        
+        arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg
+    } >> "$LOG_FILE" 2>&1 || show_error "Bootloader installation failed"
     
-    if [[ "$BOOT_MODE" == "UEFI" ]]; then
-        log_info "Installing GRUB for UEFI..."
-        arch-chroot /mnt pacman -S --noconfirm efibootmgr
-        arch-chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
-    else
-        log_info "Installing GRUB for BIOS..."
-        arch-chroot /mnt grub-install --target=i386-pc "$DISK"
-    fi
-    
-    log_info "Generating GRUB config..."
-    arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg
-    
-    log_info "✓ Bootloader installed"
+    log_silent "Bootloader installed"
 }
 
 ################################################################################
-# Install Network Tools
+# Network Configuration
 ################################################################################
 
 install_network() {
-    log_step "Installing Network Tools"
+    update_progress "Configuring network"
     
-    log_info "Enabling NetworkManager..."
-    arch-chroot /mnt systemctl enable NetworkManager
+    {
+        arch-chroot /mnt systemctl enable NetworkManager
+        
+        if [[ "$INSTALL_SSH" == "true" ]]; then
+            arch-chroot /mnt pacman -S --noconfirm openssh
+            arch-chroot /mnt systemctl enable sshd
+        fi
+    } >> "$LOG_FILE" 2>&1 || show_error "Network configuration failed"
     
-    if [[ "$INSTALL_SSH" == "true" ]]; then
-        log_info "Installing and enabling SSH..."
-        arch-chroot /mnt pacman -S --noconfirm openssh
-        arch-chroot /mnt systemctl enable sshd
-    fi
-    
-    log_info "✓ Network configured"
+    log_silent "Network configured"
 }
 
 ################################################################################
-# Install GUI (XFCE Desktop)
+# Install Minimal GUI (Ultra-Lightweight XFCE)
 ################################################################################
 
 install_gui() {
     if [[ "$INSTALL_GUI" != "true" ]]; then
-        log_info "Skipping GUI installation"
         return
     fi
     
-    log_step "Installing GUI (XFCE)"
+    update_progress "Installing minimal GUI"
     
-    log_info "Installing Xorg (minimal)..."
-    arch-chroot /mnt pacman -S --noconfirm xorg-server xorg-xinit
-    
-    log_info "Installing XFCE (minimal)..."
-    arch-chroot /mnt pacman -S --noconfirm xfce4 xfce4-terminal
-    
-    log_info "Installing file manager..."
-    arch-chroot /mnt pacman -S --noconfirm thunar
-    
-    log_info "Installing display manager..."
-    arch-chroot /mnt pacman -S --noconfirm lightdm lightdm-gtk-greeter
-    
-    log_info "Configuring auto-login..."
-    # Create lightdm config directory
-    mkdir -p /mnt/etc/lightdm/lightdm.conf.d
-    
-    # Configure auto-login properly
-    cat > /mnt/etc/lightdm/lightdm.conf.d/50-autologin.conf <<EOF
+    {
+        # Minimal X server (no unnecessary drivers)
+        arch-chroot /mnt pacman -S --noconfirm xorg-server xorg-xinit
+        
+        # Ultra-minimal XFCE (only core components)
+        arch-chroot /mnt pacman -S --noconfirm xfce4 xfce4-terminal thunar
+        
+        # Lightweight display manager
+        arch-chroot /mnt pacman -S --noconfirm lightdm lightdm-gtk-greeter
+        
+        # Auto-login configuration
+        mkdir -p /mnt/etc/lightdm/lightdm.conf.d
+        cat > /mnt/etc/lightdm/lightdm.conf.d/50-autologin.conf <<EOF
 [Seat:*]
 autologin-user=$USERNAME
 autologin-user-timeout=0
 autologin-session=xfce
 EOF
-    
-    # Add user to autologin group
-    arch-chroot /mnt groupadd -r autologin || true
-    arch-chroot /mnt gpasswd -a $USERNAME autologin
-    
-    # Configure PAM for autologin
-    cat > /mnt/etc/pam.d/lightdm-autologin <<EOF
+        
+        arch-chroot /mnt groupadd -r autologin || true
+        arch-chroot /mnt gpasswd -a $USERNAME autologin
+        
+        cat > /mnt/etc/pam.d/lightdm-autologin <<EOF
 #%PAM-1.0
 auth        sufficient  pam_succeed_if.so user ingroup autologin
 auth        required    pam_permit.so
@@ -376,22 +375,10 @@ account     include     system-local-login
 password    include     system-local-login
 session     include     system-local-login
 EOF
-    
-    # Create .xinitrc for the user to start XFCE
-    cat > /mnt/home/$USERNAME/.xinitrc <<EOF
-#!/bin/sh
-exec startxfce4
-EOF
-    
-    chmod +x /mnt/home/$USERNAME/.xinitrc
-    chown 1000:1000 /mnt/home/$USERNAME/.xinitrc
-    
-    # Optimize XFCE for performance
-    log_info "Optimizing XFCE for performance..."
-    mkdir -p /mnt/home/$USERNAME/.config/xfce4/xfconf/xfce-perchannel-xml
-    
-    # Disable compositor for better performance
-    cat > /mnt/home/$USERNAME/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml <<EOF
+        
+        # Disable compositor for better performance
+        mkdir -p /mnt/home/$USERNAME/.config/xfce4/xfconf/xfce-perchannel-xml
+        cat > /mnt/home/$USERNAME/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <channel name="xfwm4" version="1.0">
   <property name="general" type="empty">
@@ -400,125 +387,145 @@ EOF
   </property>
 </channel>
 EOF
+        
+        chown -R 1000:1000 /mnt/home/$USERNAME/.config
+        arch-chroot /mnt systemctl enable lightdm
+        
+    } >> "$LOG_FILE" 2>&1 || show_error "GUI installation failed"
     
-    chown -R 1000:1000 /mnt/home/$USERNAME/.config
-    
-    arch-chroot /mnt systemctl enable lightdm
-    
-    log_info "✓ XFCE Desktop installed (minimal) with auto-login"
+    log_silent "Minimal GUI installed"
 }
 
 ################################################################################
-################################################################################
-# Install Extra Packages (Development Tools)
+# Install Essential Tools
 ################################################################################
 
-install_extras() {
-    if [[ "$INSTALL_EXTRA" != "true" ]]; then
-        return
-    fi
+install_essentials() {
+    update_progress "Installing essential tools"
     
-    log_step "Installing Development Tools"
+    {
+        # Build tools
+        arch-chroot /mnt pacman -S --noconfirm wget curl git base-devel
+        
+        # Development tools
+        arch-chroot /mnt pacman -S --noconfirm python python-pip nodejs npm
+        
+        # Minimal browser (Firefox is lighter than Chrome)
+        arch-chroot /mnt pacman -S --noconfirm firefox
+        
+        # Essential utilities
+        arch-chroot /mnt pacman -S --noconfirm htop fzf jq fastfetch
+        
+    } >> "$LOG_FILE" 2>&1 || show_error "Essential tools installation failed"
     
-    log_info "Syncing package database..."
-    arch-chroot /mnt pacman -Sy
-    
-    log_info "Installing build tools..."
-    arch-chroot /mnt pacman -S --noconfirm base-devel git wget curl
-    
-    log_info "Installing programming languages..."
-    arch-chroot /mnt pacman -S --noconfirm python nodejs npm
-    
-    log_info "Installing utilities..."
-    arch-chroot /mnt pacman -S --noconfirm htop fastfetch fzf
-    
-    log_info "Installing browser..."
-    arch-chroot /mnt pacman -S --noconfirm firefox
-    
-    log_info "✓ Development tools installed"
+    log_silent "Essential tools installed"
 }
 
 ################################################################################
-# System Optimizations
+# Ultra-Aggressive Optimization
 ################################################################################
 
 optimize_system() {
-    log_step "Optimizing System Performance"
+    update_progress "Applying ultra optimizations"
     
-    # Disable exit on error for optional optimizations
-    set +e
-    
-    log_info "Configuring I/O scheduler for better disk performance..."
-    cat > /mnt/etc/udev/rules.d/60-ioschedulers.rules <<EOF
-# Set deadline scheduler for non-rotating disks
-ACTION=="add|change", KERNEL=="sd[a-z]|mmcblk[0-9]*|nvme[0-9]*", ATTR{queue/rotational}=="0", ATTR{queue/scheduler}="mq-deadline"
-# Set BFQ scheduler for rotating disks
-ACTION=="add|change", KERNEL=="sd[a-z]", ATTR{queue/rotational}=="1", ATTR{queue/scheduler}="bfq"
-EOF
-    
-    log_info "Disabling unnecessary services..."
-    # Disable PC speaker beep
-    echo "blacklist pcspkr" > /mnt/etc/modprobe.d/nobeep.conf
-    
-    log_info "Configuring faster boot..."
-    # Reduce systemd timeout
-    mkdir -p /mnt/etc/systemd/system.conf.d
-    cat > /mnt/etc/systemd/system.conf.d/timeout.conf <<EOF
-[Manager]
-DefaultTimeoutStartSec=10s
-DefaultTimeoutStopSec=10s
-EOF
-    
-    log_info "Configuring network optimizations..."
-    cat > /mnt/etc/sysctl.d/99-network.conf <<EOF
-# Increase network buffer sizes
-net.core.rmem_max = 16777216
-net.core.wmem_max = 16777216
-
-# Enable TCP Fast Open
-net.ipv4.tcp_fastopen = 3
-
-# Reduce TIME_WAIT connections
-net.ipv4.tcp_fin_timeout = 15
-net.ipv4.tcp_tw_reuse = 1
-EOF
-    
-    log_info "Enabling CPU frequency scaling..."
-    # Install and enable cpupower for better CPU performance (optional)
-    if arch-chroot /mnt pacman -S --noconfirm cpupower 2>/dev/null; then
-        # Set CPU governor to schedutil
-        cat > /mnt/etc/default/cpupower <<EOF
-# CPU frequency scaling governor
-governor='schedutil'
-EOF
-        arch-chroot /mnt systemctl enable cpupower
-        log_info "✓ CPU frequency scaling enabled"
-    else
-        log_warn "cpupower not available, skipping CPU frequency scaling"
-    fi
-    
-    log_info "Configuring file system optimizations..."
-    # Add noatime to fstab for better disk performance
-    arch-chroot /mnt sed -i 's/relatime/noatime/' /etc/fstab || true
-    
-    log_info "Disabling unnecessary kernel modules..."
-    cat > /mnt/etc/modprobe.d/blacklist.conf <<EOF
-# Disable unused modules for better performance
+    {
+        # Disable PC speaker
+        echo "blacklist pcspkr" > /mnt/etc/modprobe.d/nobeep.conf
+        
+        # Disable unnecessary kernel modules
+        cat > /mnt/etc/modprobe.d/blacklist-bloat.conf <<EOF
+# Disable unnecessary modules for RAM optimization
 blacklist bluetooth
 blacklist btusb
+blacklist uvcvideo
+blacklist snd_pcsp
+blacklist pcspkr
 EOF
-    
-    log_info "Configuring transparent huge pages..."
-    cat > /mnt/etc/tmpfiles.d/thp.conf <<EOF
-# Enable transparent huge pages for better memory performance
+        
+        # Faster boot configuration
+        mkdir -p /mnt/etc/systemd/system.conf.d
+        cat > /mnt/etc/systemd/system.conf.d/timeout.conf <<EOF
+[Manager]
+DefaultTimeoutStartSec=5s
+DefaultTimeoutStopSec=5s
+EOF
+        
+        # Network optimizations
+        cat > /mnt/etc/sysctl.d/99-network.conf <<EOF
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+net.ipv4.tcp_fastopen = 3
+net.ipv4.tcp_fin_timeout = 10
+net.ipv4.tcp_tw_reuse = 1
+EOF
+        
+        # I/O scheduler optimization
+        cat > /mnt/etc/udev/rules.d/60-ioschedulers.rules <<EOF
+ACTION=="add|change", KERNEL=="sd[a-z]|mmcblk[0-9]*|nvme[0-9]*", ATTR{queue/rotational}=="0", ATTR{queue/scheduler}="mq-deadline"
+ACTION=="add|change", KERNEL=="sd[a-z]", ATTR{queue/rotational}=="1", ATTR{queue/scheduler}="bfq"
+EOF
+        
+        # Transparent huge pages
+        cat > /mnt/etc/tmpfiles.d/thp.conf <<EOF
 w /sys/kernel/mm/transparent_hugepage/enabled - - - - madvise
 w /sys/kernel/mm/transparent_hugepage/defrag - - - - defer+madvise
 EOF
+        
+        # Add noatime to fstab for better disk performance
+        arch-chroot /mnt sed -i 's/relatime/noatime/' /etc/fstab || true
+        
+    } >> "$LOG_FILE" 2>&1 || show_error "Optimization failed"
     
-    # Re-enable exit on error
-    set -e
+    log_silent "Ultra optimizations applied"
+}
+
+################################################################################
+# Disable Unnecessary Services
+################################################################################
+
+disable_bloat_services() {
+    update_progress "Disabling unnecessary services"
     
-    log_info "✓ System optimizations applied"
+    {
+        # Disable services that consume RAM but aren't needed
+        local services_to_disable=(
+            "bluetooth.service"
+            "ModemManager.service"
+            "avahi-daemon.service"
+            "cups.service"
+            "cups-browsed.service"
+        )
+        
+        for service in "${services_to_disable[@]}"; do
+            arch-chroot /mnt systemctl disable "$service" 2>/dev/null || true
+            arch-chroot /mnt systemctl mask "$service" 2>/dev/null || true
+        done
+        
+    } >> "$LOG_FILE" 2>&1
+    
+    log_silent "Unnecessary services disabled"
+}
+
+################################################################################
+# Install AUR Helper (yay)
+################################################################################
+
+install_aur_helper() {
+    update_progress "Installing AUR helper"
+    
+    {
+        echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" | arch-chroot /mnt tee /etc/sudoers.d/temp_nopasswd > /dev/null
+        
+        arch-chroot /mnt bash -c "cd /tmp && \
+            sudo -u $USERNAME git clone https://aur.archlinux.org/yay.git 2>/dev/null && \
+            cd yay && \
+            sudo -u $USERNAME makepkg -si --noconfirm" 2>/dev/null || true
+        
+        arch-chroot /mnt rm -f /etc/sudoers.d/temp_nopasswd
+        
+    } >> "$LOG_FILE" 2>&1
+    
+    log_silent "AUR helper installed"
 }
 
 ################################################################################
@@ -526,221 +533,119 @@ EOF
 ################################################################################
 
 install_firewall() {
-    log_step "Installing Firewall"
+    update_progress "Installing firewall"
     
-    log_info "Installing ufw (Uncomplicated Firewall)..."
-    arch-chroot /mnt pacman -S --noconfirm ufw
-    
-    log_info "Configuring firewall rules..."
-    arch-chroot /mnt ufw default deny incoming
-    arch-chroot /mnt ufw default allow outgoing
-    
-    if [[ "$INSTALL_SSH" == "true" ]]; then
-        log_info "Allowing SSH through firewall..."
-        arch-chroot /mnt ufw allow ssh
-    fi
-    
-    log_info "Enabling firewall..."
-    arch-chroot /mnt ufw --force enable
-    arch-chroot /mnt systemctl enable ufw
-    
-    log_info "✓ Firewall configured"
-}
-
-################################################################################
-# Install AUR Helper
-################################################################################
-
-install_aur_helper() {
-    log_step "Installing AUR Helper (yay)"
-    
-    # Disable exit on error for optional AUR helper
-    set +e
-    
-    log_info "Installing yay for AUR package management..."
-    
-    # Configure sudo to not require password for wheel group temporarily
-    echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" | arch-chroot /mnt tee /etc/sudoers.d/temp_nopasswd > /dev/null
-    
-    # Install as user (not root) with error handling
-    arch-chroot /mnt bash -c "cd /tmp && \
-        sudo -u $USERNAME git clone https://aur.archlinux.org/yay.git 2>/dev/null && \
-        cd yay && \
-        sudo -u $USERNAME makepkg -si --noconfirm" 2>/dev/null
-    
-    # Remove temporary sudo config
-    arch-chroot /mnt rm -f /etc/sudoers.d/temp_nopasswd
-    
-    if [ $? -eq 0 ]; then
-        log_info "✓ AUR helper (yay) installed"
-    else
-        log_warn "Failed to install yay, you can install it manually later"
-        log_warn "Run: git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si"
-    fi
-    
-    # Re-enable exit on error
-    set -e
-}
-
-################################################################################
-# Cleanup and Finish
-################################################################################
-
-create_post_install_script() {
-    log_step "Creating Post-Install Helper Script"
-    
-    log_info "Creating helper script for user..."
-    cat > /mnt/home/$USERNAME/post-install.sh <<'POSTEOF'
-#!/bin/bash
-################################################################################
-# Post-Installation Helper Script
-# Run this after first boot to install additional software
-################################################################################
-
-echo "=== Arch Linux Post-Install Helper ==="
-echo ""
-echo "Available options:"
-echo "1. Install AUR packages (using yay)"
-echo "2. Install Docker"
-echo "3. Install VS Code"
-echo "4. Install Chrome/Chromium"
-echo "5. Update system"
-echo "6. Install all of the above"
-echo "0. Exit"
-echo ""
-read -p "Choose option (0-6): " choice
-
-case $choice in
-    1)
-        echo "Installing popular AUR packages..."
-        yay -S --noconfirm google-chrome visual-studio-code-bin
-        ;;
-    2)
-        echo "Installing Docker..."
-        sudo pacman -S --noconfirm docker docker-compose
-        sudo systemctl enable docker
-        sudo systemctl start docker
-        sudo usermod -aG docker $USER
-        echo "Docker installed! Please logout and login again."
-        ;;
-    3)
-        echo "Installing VS Code..."
-        yay -S --noconfirm visual-studio-code-bin
-        ;;
-    4)
-        echo "Installing Chrome..."
-        yay -S --noconfirm google-chrome
-        ;;
-    5)
-        echo "Updating system..."
-        sudo pacman -Syu --noconfirm
-        ;;
-    6)
-        echo "Installing everything..."
-        sudo pacman -Syu --noconfirm
-        sudo pacman -S --noconfirm docker docker-compose
-        sudo systemctl enable docker
-        sudo systemctl start docker
-        sudo usermod -aG docker $USER
-        yay -S --noconfirm google-chrome visual-studio-code-bin
-        echo "All done! Please logout and login again."
-        ;;
-    0)
-        echo "Exiting..."
-        exit 0
-        ;;
-    *)
-        echo "Invalid option"
-        ;;
-esac
-POSTEOF
-    
-    chmod +x /mnt/home/$USERNAME/post-install.sh
-    chown 1000:1000 /mnt/home/$USERNAME/post-install.sh
-    
-    log_info "✓ Post-install script created at ~/post-install.sh"
-    
-    log_info "Downloading PrecoresHub v5.0.0 (All-in-One Control Center)..."
-    # Download PrecoresHub.tar.gz from GitHub
-    arch-chroot /mnt bash -c "cd /tmp && curl -L -o PrecoresHub.tar.gz https://github.com/ZewK3/Precores-Software/raw/refs/heads/main/PrecoresHub.tar.gz 2>/dev/null"
-    
-    if [ -f /mnt/tmp/PrecoresHub.tar.gz ]; then
-        log_info "Extracting PrecoresHub..."
-        arch-chroot /mnt bash -c "cd /tmp && tar -xzf PrecoresHub.tar.gz 2>/dev/null"
+    {
+        arch-chroot /mnt pacman -S --noconfirm ufw
+        arch-chroot /mnt ufw default deny incoming
+        arch-chroot /mnt ufw default allow outgoing
         
-        if [ -d /mnt/tmp/PrecoresHub ]; then
-            log_info "Installing PrecoresHub..."
-            # Copy to user home directory
-            arch-chroot /mnt bash -c "cp -r /tmp/PrecoresHub /home/$USERNAME/ 2>/dev/null"
-            arch-chroot /mnt bash -c "chown -R 1000:1000 /home/$USERNAME/PrecoresHub 2>/dev/null"
-            arch-chroot /mnt bash -c "chmod +x /home/$USERNAME/PrecoresHub/PrecoresHub.sh 2>/dev/null"
-            
-            # Create symlink for easy access
-            arch-chroot /mnt bash -c "ln -sf /home/$USERNAME/PrecoresHub/PrecoresHub.sh /home/$USERNAME/precoreshub 2>/dev/null"
-            arch-chroot /mnt bash -c "chown 1000:1000 /home/$USERNAME/precoreshub 2>/dev/null"
-            
-            # Cleanup
-            arch-chroot /mnt bash -c "rm -rf /tmp/PrecoresHub /tmp/PrecoresHub.tar.gz 2>/dev/null"
-            
-            log_info "✓ PrecoresHub v5.0.0 installed at ~/PrecoresHub/"
-        else
-            log_warn "Failed to extract PrecoresHub"
+        if [[ "$INSTALL_SSH" == "true" ]]; then
+            arch-chroot /mnt ufw allow ssh
         fi
-    else
-        log_warn "Failed to download PrecoresHub.tar.gz"
-    fi
+        
+        arch-chroot /mnt ufw --force enable
+        arch-chroot /mnt systemctl enable ufw
+        
+    } >> "$LOG_FILE" 2>&1 || show_error "Firewall installation failed"
+    
+    log_silent "Firewall configured"
 }
+
+################################################################################
+# Download and Install PrecoresHub
+################################################################################
+
+download_precoreshub() {
+    update_progress "Installing PrecoresHub"
+    
+    {
+        arch-chroot /mnt bash -c "cd /tmp && curl -L -o PrecoresHub.tar.gz https://github.com/ZewK3/Precores-Software/raw/refs/heads/main/PrecoresHub.tar.gz 2>/dev/null"
+        
+        if [ -f /mnt/tmp/PrecoresHub.tar.gz ]; then
+            arch-chroot /mnt bash -c "cd /tmp && tar -xzf PrecoresHub.tar.gz 2>/dev/null"
+            
+            if [ -d /mnt/tmp/PrecoresHub ]; then
+                arch-chroot /mnt bash -c "cp -r /tmp/PrecoresHub /home/$USERNAME/ 2>/dev/null"
+                arch-chroot /mnt bash -c "chown -R 1000:1000 /home/$USERNAME/PrecoresHub 2>/dev/null"
+                arch-chroot /mnt bash -c "chmod +x /home/$USERNAME/PrecoresHub/PrecoresHub.sh 2>/dev/null"
+                arch-chroot /mnt bash -c "ln -sf /home/$USERNAME/PrecoresHub/PrecoresHub.sh /home/$USERNAME/precoreshub 2>/dev/null"
+                arch-chroot /mnt bash -c "chown 1000:1000 /home/$USERNAME/precoreshub 2>/dev/null"
+                arch-chroot /mnt bash -c "rm -rf /tmp/PrecoresHub /tmp/PrecoresHub.tar.gz 2>/dev/null"
+            fi
+        fi
+        
+    } >> "$LOG_FILE" 2>&1
+    
+    log_silent "PrecoresHub installed"
+}
+
+################################################################################
+# Cleanup and Remove Bloat
+################################################################################
+
+cleanup_bloat() {
+    update_progress "Removing unnecessary packages"
+    
+    {
+        # Remove package cache to save space
+        arch-chroot /mnt pacman -Scc --noconfirm
+        
+        # Remove orphaned packages
+        arch-chroot /mnt pacman -Rns $(arch-chroot /mnt pacman -Qtdq) --noconfirm 2>/dev/null || true
+        
+        # Clear logs
+        arch-chroot /mnt journalctl --vacuum-size=10M
+        
+    } >> "$LOG_FILE" 2>&1
+    
+    log_silent "Cleanup complete"
+}
+
+################################################################################
+# Finish Installation
+################################################################################
 
 finish_installation() {
-    log_step "Finishing Installation"
+    update_progress "Finalizing installation"
     
-    create_post_install_script
+    {
+        download_precoreshub
+        cleanup_bloat
+        
+        umount -R /mnt || true
+        
+    } >> "$LOG_FILE" 2>&1 || show_error "Finalization failed"
     
-    log_info "Unmounting filesystems..."
-    umount -R /mnt || true
+    update_progress "Installation complete!"
     
-    log_step "Installation Complete!"
-    
+    # Show completion message
     echo ""
-    log_info "System Information:"
-    echo "  Hostname: $HOSTNAME"
-    echo "  Username: $USERNAME"
-    echo "  Password: $PASSWORD"
-    echo "  Boot Mode: $BOOT_MODE"
-    echo "  Disk: $DISK"
     echo ""
-    log_info "Features installed:"
-    echo "  ✓ XFCE Desktop with auto-login"
-    echo "  ✓ zram (compressed RAM swap)"
-    echo "  ✓ Firewall (ufw) configured"
-    echo "  ✓ AUR helper (yay) installed"
-    echo "  ✓ System optimizations applied"
-    echo "  ✓ Firefox browser"
+    echo "╔════════════════════════════════════════════════════════════════╗"
+    echo "║              Installation Completed Successfully!             ║"
+    echo "╚════════════════════════════════════════════════════════════════╝"
     echo ""
-    log_info "Helper scripts available:"
-    echo "  • ~/PrecoresHub/PrecoresHub.sh  - ALL-IN-ONE Control Center (START HERE!)"
-    echo "  • ~/precoreshub                 - Shortcut to PrecoresHub"
-    echo "  • ~/post-install.sh             - Simple installer (basic menu)"
+    echo "System Information:"
+    echo "  • Hostname: $HOSTNAME"
+    echo "  • Username: $USERNAME"
+    echo "  • Password: $PASSWORD"
+    echo "  • Boot Mode: $BOOT_MODE"
     echo ""
-    log_info "After first boot, run:"
-    echo "  ./precoreshub                   - Launch Precores Hub (RECOMMENDED)"
-    echo "  OR"
-    echo "  ./PrecoresHub/PrecoresHub.sh    - Direct launch"
+    echo "Optimizations Applied:"
+    echo "  ✓ Ultra-minimal package installation"
+    echo "  ✓ ZRAM (compressed RAM swap)"
+    echo "  ✓ Aggressive memory optimization"
+    echo "  ✓ Unnecessary services disabled"
+    echo "  ✓ Bloat packages removed"
+    echo "  ✓ Firewall configured"
+    echo "  ✓ PrecoresHub v5.0.0 installed"
     echo ""
-    log_info "PrecoresHub v5.0.0 includes:"
-    echo "  - QuickInstall: Install 20+ applications"
-    echo "  - QuickFix: System repair & fixes"
-    echo "  - SystemManager: Monitoring & updates"
-    echo "  - Favorites: Manage favorite apps"
-    echo "  - History: Installation history & rollback"
-    echo "  - Plugin Manager: Manage plugins"
-    echo "  - Settings: Configuration"
+    echo "After first boot, run: ./precoreshub"
     echo ""
-    log_warn "Please remove the installation media"
-    log_info "System will reboot in 10 seconds..."
+    echo "System will reboot in 10 seconds..."
     echo ""
     
-    # Auto-reboot after 10 seconds
     sleep 10
     reboot
 }
@@ -750,16 +655,7 @@ finish_installation() {
 ################################################################################
 
 main() {
-    log_step "Arch Linux Auto-Install"
-    
-    echo "Configuration:"
-    echo "  Hostname: $HOSTNAME"
-    echo "  Username: $USERNAME"
-    echo "  Timezone: $TIMEZONE"
-    echo "  Locale: $LOCALE"
-    echo "  Install GUI: $INSTALL_GUI"
-    echo "  Install SSH: $INSTALL_SSH"
-    echo ""
+    init_progress
     
     preflight_checks
     partition_disk
@@ -771,10 +667,11 @@ main() {
     install_bootloader
     install_network
     install_gui
-    install_extras
+    install_essentials
     optimize_system
-    install_firewall
+    disable_bloat_services
     install_aur_helper
+    install_firewall
     finish_installation
 }
 
