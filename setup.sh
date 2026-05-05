@@ -37,24 +37,46 @@ SILENT_MODE=true
 LOG_FILE="/tmp/arch-install.log"
 
 ################################################################################
-# Progress Bar System
+# Progress Bar System with Beautiful UI
 ################################################################################
 
 TOTAL_STEPS=20
 CURRENT_STEP=0
 PROGRESS_BAR_WIDTH=50
 
-# Initialize progress
+# Colors for progress bar
+COLOR_RESET='\033[0m'
+COLOR_BLUE='\033[1;34m'
+COLOR_GREEN='\033[1;32m'
+COLOR_CYAN='\033[1;36m'
+COLOR_YELLOW='\033[1;33m'
+COLOR_WHITE='\033[1;37m'
+COLOR_GRAY='\033[0;37m'
+
+# Initialize progress with beautiful header
 init_progress() {
     clear
-    echo "╔════════════════════════════════════════════════════════════════╗"
-    echo "║     Arch Linux Ultra-Optimized Installation - Silent Mode     ║"
-    echo "╚════════════════════════════════════════════════════════════════╝"
+    echo -e "${COLOR_CYAN}"
+    echo "╔═══════════════════════════════════════════════════════════════════════╗"
+    echo "║                                                                       ║"
+    echo "║        █████╗ ██████╗  ██████╗██╗  ██╗    ██╗     ██╗███╗   ██╗     ║"
+    echo "║       ██╔══██╗██╔══██╗██╔════╝██║  ██║    ██║     ██║████╗  ██║     ║"
+    echo "║       ███████║██████╔╝██║     ███████║    ██║     ██║██╔██╗ ██║     ║"
+    echo "║       ██╔══██║██╔══██╗██║     ██╔══██║    ██║     ██║██║╚██╗██║     ║"
+    echo "║       ██║  ██║██║  ██║╚██████╗██║  ██║    ███████╗██║██║ ╚████║     ║"
+    echo "║       ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝    ╚══════╝╚═╝╚═╝  ╚═══╝     ║"
+    echo "║                                                                       ║"
+    echo "║              Ultra-Optimized Installation - Silent Mode              ║"
+    echo "║                                                                       ║"
+    echo "╚═══════════════════════════════════════════════════════════════════════╝"
+    echo -e "${COLOR_RESET}"
+    echo ""
+    echo -e "${COLOR_GRAY}Starting installation... Please wait...${COLOR_RESET}"
     echo ""
     > "$LOG_FILE"  # Clear log file
 }
 
-# Update progress bar
+# Update progress bar with beautiful colors and animation
 update_progress() {
     local step_name="$1"
     CURRENT_STEP=$((CURRENT_STEP + 1))
@@ -62,12 +84,51 @@ update_progress() {
     local filled=$((CURRENT_STEP * PROGRESS_BAR_WIDTH / TOTAL_STEPS))
     local empty=$((PROGRESS_BAR_WIDTH - filled))
     
-    # Clear previous line and draw progress bar
-    printf "\r\033[K"
-    printf "["
-    printf "%${filled}s" | tr ' ' '█'
+    # Choose color based on progress
+    local bar_color
+    if [ $percent -lt 33 ]; then
+        bar_color=$COLOR_CYAN
+    elif [ $percent -lt 66 ]; then
+        bar_color=$COLOR_BLUE
+    elif [ $percent -lt 100 ]; then
+        bar_color=$COLOR_YELLOW
+    else
+        bar_color=$COLOR_GREEN
+    fi
+    
+    # Clear previous lines (progress bar + step name)
+    printf "\033[2K\r"  # Clear current line
+    printf "\033[1A\033[2K\r"  # Clear previous line
+    
+    # Draw progress bar with colors
+    echo -e "${COLOR_WHITE}╔═══════════════════════════════════════════════════════════════════════╗${COLOR_RESET}"
+    printf "${COLOR_WHITE}║${COLOR_RESET} "
+    printf "${bar_color}"
+    
+    # Draw filled portion with gradient effect
+    for ((i=0; i<filled; i++)); do
+        if [ $((i % 3)) -eq 0 ]; then
+            printf "█"
+        elif [ $((i % 3)) -eq 1 ]; then
+            printf "▓"
+        else
+            printf "▒"
+        fi
+    done
+    
+    # Draw empty portion
+    printf "${COLOR_GRAY}"
     printf "%${empty}s" | tr ' ' '░'
-    printf "] %3d%% - %s" "$percent" "$step_name"
+    
+    # Draw percentage and step name
+    printf "${COLOR_RESET} ${COLOR_WHITE}%3d%%${COLOR_RESET} ${COLOR_WHITE}║${COLOR_RESET}\n" "$percent"
+    printf "${COLOR_WHITE}╚═══════════════════════════════════════════════════════════════════════╝${COLOR_RESET}\n"
+    printf "${COLOR_CYAN}➤${COLOR_RESET} ${COLOR_WHITE}%s${COLOR_RESET}" "$step_name"
+    
+    # Add spinning animation
+    local spinner=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+    local spin_index=$((CURRENT_STEP % 10))
+    printf " ${COLOR_CYAN}${spinner[$spin_index]}${COLOR_RESET}"
 }
 
 # Log to file (silent)
@@ -560,18 +621,30 @@ download_precoreshub() {
     update_progress "Installing PrecoresHub"
     
     {
-        arch-chroot /mnt bash -c "cd /tmp && curl -L -o PrecoresHub.tar.gz https://github.com/ZewK3/Precores-Software/raw/refs/heads/main/PrecoresHub.tar.gz 2>/dev/null"
+        # Download PrecoresHub.tar.gz
+        arch-chroot /mnt bash -c "cd /tmp && curl -L -o PrecoresHub.tar.gz https://github.com/ZewK3/Precores-Software/raw/refs/heads/main/PrecoresHub.tar.gz"
         
         if [ -f /mnt/tmp/PrecoresHub.tar.gz ]; then
-            arch-chroot /mnt bash -c "cd /tmp && tar -xzf PrecoresHub.tar.gz 2>/dev/null"
+            # Extract archive
+            arch-chroot /mnt bash -c "cd /tmp && tar -xzf PrecoresHub.tar.gz"
             
             if [ -d /mnt/tmp/PrecoresHub ]; then
-                arch-chroot /mnt bash -c "cp -r /tmp/PrecoresHub /home/$USERNAME/ 2>/dev/null"
-                arch-chroot /mnt bash -c "chown -R 1000:1000 /home/$USERNAME/PrecoresHub 2>/dev/null"
-                arch-chroot /mnt bash -c "chmod +x /home/$USERNAME/PrecoresHub/PrecoresHub.sh 2>/dev/null"
-                arch-chroot /mnt bash -c "ln -sf /home/$USERNAME/PrecoresHub/PrecoresHub.sh /home/$USERNAME/precoreshub 2>/dev/null"
-                arch-chroot /mnt bash -c "chown 1000:1000 /home/$USERNAME/precoreshub 2>/dev/null"
-                arch-chroot /mnt bash -c "rm -rf /tmp/PrecoresHub /tmp/PrecoresHub.tar.gz 2>/dev/null"
+                # Copy to user home directory
+                arch-chroot /mnt bash -c "cp -r /tmp/PrecoresHub /home/$USERNAME/"
+                
+                # Set permissions
+                arch-chroot /mnt bash -c "chown -R $USERNAME:$USERNAME /home/$USERNAME/PrecoresHub"
+                arch-chroot /mnt bash -c "chmod +x /home/$USERNAME/PrecoresHub/PrecoresHub.sh"
+                
+                # Create symlink in home directory
+                arch-chroot /mnt bash -c "ln -sf /home/$USERNAME/PrecoresHub/PrecoresHub.sh /home/$USERNAME/precoreshub"
+                arch-chroot /mnt bash -c "chown -h $USERNAME:$USERNAME /home/$USERNAME/precoreshub"
+                
+                # Create system-wide symlink (optional, for easy access)
+                arch-chroot /mnt bash -c "ln -sf /home/$USERNAME/PrecoresHub/PrecoresHub.sh /usr/local/bin/precoreshub"
+                
+                # Cleanup
+                arch-chroot /mnt bash -c "rm -rf /tmp/PrecoresHub /tmp/PrecoresHub.tar.gz"
             fi
         fi
         
