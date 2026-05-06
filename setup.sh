@@ -18,7 +18,7 @@ set -u  # Exit on undefined variable
 ################################################################################
 
 # System Configuration
-HOSTNAME="${HOSTNAME:-archlinux}"
+HOSTNAME="${HOSTNAME:-precores}"
 USERNAME="${USERNAME:-pcl}"
 PASSWORD="${PASSWORD:-123123}"
 TIMEZONE="${TIMEZONE:-Asia/Ho_Chi_Minh}"
@@ -84,51 +84,27 @@ update_progress() {
     local filled=$((CURRENT_STEP * PROGRESS_BAR_WIDTH / TOTAL_STEPS))
     local empty=$((PROGRESS_BAR_WIDTH - filled))
     
-    # Choose color based on progress
-    local bar_color
-    if [ $percent -lt 33 ]; then
-        bar_color=$COLOR_CYAN
-    elif [ $percent -lt 66 ]; then
-        bar_color=$COLOR_BLUE
-    elif [ $percent -lt 100 ]; then
-        bar_color=$COLOR_YELLOW
-    else
-        bar_color=$COLOR_GREEN
-    fi
+    # Use single cyan color for entire progress bar
+    local bar_color=$COLOR_CYAN
     
-    # Clear previous lines (progress bar + step name)
-    printf "\033[2K\r"  # Clear current line
-    printf "\033[1A\033[2K\r"  # Clear previous line
+    # Clear previous line
+    printf "\033[2K\r"
     
-    # Draw progress bar with colors
-    echo -e "${COLOR_WHITE}╔═══════════════════════════════════════════════════════════════════════╗${COLOR_RESET}"
+    # Draw progress bar on single line
     printf "${COLOR_WHITE}║${COLOR_RESET} "
     printf "${bar_color}"
     
-    # Draw filled portion with gradient effect
+    # Draw filled portion (solid blocks only)
     for ((i=0; i<filled; i++)); do
-        if [ $((i % 3)) -eq 0 ]; then
-            printf "█"
-        elif [ $((i % 3)) -eq 1 ]; then
-            printf "▓"
-        else
-            printf "▒"
-        fi
+        printf "█"
     done
     
     # Draw empty portion
     printf "${COLOR_GRAY}"
     printf "%${empty}s" | tr ' ' '░'
     
-    # Draw percentage and step name
-    printf "${COLOR_RESET} ${COLOR_WHITE}%3d%%${COLOR_RESET} ${COLOR_WHITE}║${COLOR_RESET}\n" "$percent"
-    printf "${COLOR_WHITE}╚═══════════════════════════════════════════════════════════════════════╝${COLOR_RESET}\n"
-    printf "${COLOR_CYAN}➤${COLOR_RESET} ${COLOR_WHITE}%s${COLOR_RESET}" "$step_name"
-    
-    # Add spinning animation
-    local spinner=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
-    local spin_index=$((CURRENT_STEP % 10))
-    printf " ${COLOR_CYAN}${spinner[$spin_index]}${COLOR_RESET}"
+    # Draw percentage and step name on same line
+    printf "${COLOR_RESET} ${COLOR_WHITE}%3d%%${COLOR_RESET} ${COLOR_WHITE}║${COLOR_RESET} ${COLOR_CYAN}%s${COLOR_RESET}" "$percent" "$step_name"
 }
 
 # Log to file (silent)
@@ -636,12 +612,23 @@ download_precoreshub() {
                 arch-chroot /mnt bash -c "chown -R $USERNAME:$USERNAME /home/$USERNAME/PrecoresHub"
                 arch-chroot /mnt bash -c "chmod +x /home/$USERNAME/PrecoresHub/PrecoresHub.sh"
                 
-                # Create symlink in home directory
-                arch-chroot /mnt bash -c "ln -sf /home/$USERNAME/PrecoresHub/PrecoresHub.sh /home/$USERNAME/precoreshub"
-                arch-chroot /mnt bash -c "chown -h $USERNAME:$USERNAME /home/$USERNAME/precoreshub"
+                # Make all library files executable
+                arch-chroot /mnt bash -c "chmod +x /home/$USERNAME/PrecoresHub/lib/*.sh 2>/dev/null || true"
                 
-                # Create system-wide symlink (optional, for easy access)
-                arch-chroot /mnt bash -c "ln -sf /home/$USERNAME/PrecoresHub/PrecoresHub.sh /usr/local/bin/precoreshub"
+                # Create wrapper script in home directory
+                cat > /mnt/home/$USERNAME/precoreshub <<'WRAPPER_EOF'
+#!/bin/bash
+cd ~/PrecoresHub && ./PrecoresHub.sh "$@"
+WRAPPER_EOF
+                arch-chroot /mnt bash -c "chmod +x /home/$USERNAME/precoreshub"
+                arch-chroot /mnt bash -c "chown $USERNAME:$USERNAME /home/$USERNAME/precoreshub"
+                
+                # Create system-wide wrapper script
+                cat > /mnt/usr/local/bin/precoreshub <<WRAPPER_SYSTEM_EOF
+#!/bin/bash
+cd /home/$USERNAME/PrecoresHub && ./PrecoresHub.sh "\$@"
+WRAPPER_SYSTEM_EOF
+                arch-chroot /mnt bash -c "chmod +x /usr/local/bin/precoreshub"
                 
                 # Cleanup
                 arch-chroot /mnt bash -c "rm -rf /tmp/PrecoresHub /tmp/PrecoresHub.tar.gz"
