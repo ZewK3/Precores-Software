@@ -40,9 +40,9 @@ LOG_FILE="/tmp/arch-install.log"
 # Progress Bar System with Beautiful UI
 ################################################################################
 
-TOTAL_STEPS=20
+TOTAL_STEPS=14
 CURRENT_STEP=0
-PROGRESS_BAR_WIDTH=50
+PROGRESS_BAR_WIDTH=56  # Optimized for logo alignment
 
 # Colors for progress bar
 COLOR_RESET='\033[0m'
@@ -81,30 +81,40 @@ update_progress() {
     local step_name="$1"
     CURRENT_STEP=$((CURRENT_STEP + 1))
     local percent=$((CURRENT_STEP * 100 / TOTAL_STEPS))
-    local filled=$((CURRENT_STEP * PROGRESS_BAR_WIDTH / TOTAL_STEPS))
+    local filled=$((percent * PROGRESS_BAR_WIDTH / 100))
     local empty=$((PROGRESS_BAR_WIDTH - filled))
     
-    # Use single cyan color for entire progress bar
-    local bar_color=$COLOR_CYAN
+    # Clear screen and redraw header
+    clear
+    echo -e "${COLOR_CYAN}"
+    echo "╔═══════════════════════════════════════════════════════════════════════╗"
+    echo "║                                                                       ║"
+    echo "║   ██████╗ ██████╗ ███████╗ ██████╗ ██████╗ ██████╗ ███████╗███████╗   ║"
+    echo "║   ██╔══██╗██╔══██╗██╔════╝██╔════╝██╔═══██╗██╔══██╗██╔════╝██╔════╝   ║"
+    echo "║   ██████╔╝██████╔╝█████╗  ██║     ██║   ██║██████╔╝█████╗  ███████╗   ║"
+    echo "║   ██╔═══╝ ██╔══██╗██╔══╝  ██║     ██║   ██║██╔══██╗██╔══╝  ╚════██║   ║"
+    echo "║   ██║     ██║  ██║███████╗╚██████╗╚██████╔╝██║  ██║███████╗███████║   ║"
+    echo "║   ╚═╝     ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚══════╝   ║"
+    echo "║                                                                       ║"
+    echo "║              Ultra-Optimized Installation - Silent Mode               ║"
+    echo "║                                                                       ║"
+    echo "╚═══════════════════════════════════════════════════════════════════════╝"
+    echo -e "${COLOR_RESET}"
+    echo ""
     
-    # Clear previous line
-    printf "\033[2K\r"
-    
-    # Draw progress bar on single line
-    printf "${COLOR_WHITE}║${COLOR_RESET} "
-    printf "${bar_color}"
-    
-    # Draw filled portion (solid blocks only)
+    # Draw progress bar
+    printf "${COLOR_WHITE}Progress: [${COLOR_RESET}"
+    printf "${COLOR_CYAN}"
     for ((i=0; i<filled; i++)); do
         printf "█"
     done
-    
-    # Draw empty portion
     printf "${COLOR_GRAY}"
-    printf "%${empty}s" | tr ' ' '░'
-    
-    # Draw percentage and step name on same line
-    printf "${COLOR_RESET} ${COLOR_WHITE}%3d%%${COLOR_RESET} ${COLOR_WHITE}║${COLOR_RESET} ${COLOR_CYAN}%s${COLOR_RESET}" "$percent" "$step_name"
+    for ((i=0; i<empty; i++)); do
+        printf "░"
+    done
+    printf "${COLOR_RESET}${COLOR_WHITE}] %3d%%${COLOR_RESET}\n" "$percent"
+    echo ""
+    printf "${COLOR_CYAN}▸ %s${COLOR_RESET}\n" "$step_name"
 }
 
 # Log to file (silent)
@@ -598,46 +608,162 @@ download_precoreshub() {
     
     {
         # Download PrecoresHub.tar.gz
+        echo "[INFO] Downloading PrecoresHub from GitHub..."
         arch-chroot /mnt bash -c "cd /tmp && curl -L -o PrecoresHub.tar.gz https://github.com/ZewK3/Precores-Software/raw/refs/heads/main/PrecoresHub.tar.gz"
         
-        if [ -f /mnt/tmp/PrecoresHub.tar.gz ]; then
-            # Extract archive
-            arch-chroot /mnt bash -c "cd /tmp && tar -xzf PrecoresHub.tar.gz"
-            
-            if [ -d /mnt/tmp/PrecoresHub ]; then
-                # Copy to user home directory
-                arch-chroot /mnt bash -c "cp -r /tmp/PrecoresHub /home/$USERNAME/"
-                
-                # Set permissions
-                arch-chroot /mnt bash -c "chown -R $USERNAME:$USERNAME /home/$USERNAME/PrecoresHub"
-                arch-chroot /mnt bash -c "chmod +x /home/$USERNAME/PrecoresHub/PrecoresHub.sh"
-                
-                # Make all library files executable
-                arch-chroot /mnt bash -c "chmod +x /home/$USERNAME/PrecoresHub/lib/*.sh 2>/dev/null || true"
-                
-                # Create wrapper script in home directory
-                cat > /mnt/home/$USERNAME/precoreshub <<'WRAPPER_EOF'
-#!/bin/bash
-cd ~/PrecoresHub && ./PrecoresHub.sh "$@"
-WRAPPER_EOF
-                arch-chroot /mnt bash -c "chmod +x /home/$USERNAME/precoreshub"
-                arch-chroot /mnt bash -c "chown $USERNAME:$USERNAME /home/$USERNAME/precoreshub"
-                
-                # Create system-wide wrapper script
-                cat > /mnt/usr/local/bin/precoreshub <<WRAPPER_SYSTEM_EOF
-#!/bin/bash
-cd /home/$USERNAME/PrecoresHub && ./PrecoresHub.sh "\$@"
-WRAPPER_SYSTEM_EOF
-                arch-chroot /mnt bash -c "chmod +x /usr/local/bin/precoreshub"
-                
-                # Cleanup
-                arch-chroot /mnt bash -c "rm -rf /tmp/PrecoresHub /tmp/PrecoresHub.tar.gz"
-            fi
+        if [ ! -f /mnt/tmp/PrecoresHub.tar.gz ]; then
+            echo "[ERROR] Failed to download PrecoresHub.tar.gz"
+            return 1
         fi
+        
+        echo "[INFO] Download successful, extracting..."
+        
+        # Extract archive
+        arch-chroot /mnt bash -c "cd /tmp && tar -xzf PrecoresHub.tar.gz"
+        
+        if [ ! -d /mnt/tmp/PrecoresHub ]; then
+            echo "[ERROR] Failed to extract PrecoresHub archive"
+            return 1
+        fi
+        
+        echo "[INFO] Extraction successful, installing to /usr/local/..."
+        
+        # Install to /usr/local/PrecoresHub (system-wide installation)
+        arch-chroot /mnt bash -c "cp -r /tmp/PrecoresHub /usr/local/"
+        
+        if [ ! -d /mnt/usr/local/PrecoresHub ]; then
+            echo "[ERROR] Failed to copy PrecoresHub to /usr/local/"
+            return 1
+        fi
+        
+        echo "[INFO] Setting proper permissions..."
+        
+        # Set ownership to root
+        arch-chroot /mnt bash -c "chown -R root:root /usr/local/PrecoresHub"
+        
+        # Set proper permissions (755 = rwxr-xr-x - readable and executable by all)
+        # Main script needs to be readable and executable
+        arch-chroot /mnt bash -c "chmod 755 /usr/local/PrecoresHub/PrecoresHub.sh"
+        
+        # Library files need to be readable and executable
+        arch-chroot /mnt bash -c "chmod 755 /usr/local/PrecoresHub/lib/*.sh 2>/dev/null || true"
+        
+        # Config and lang files need to be readable
+        arch-chroot /mnt bash -c "chmod 644 /usr/local/PrecoresHub/config/*.json 2>/dev/null || true"
+        arch-chroot /mnt bash -c "chmod 644 /usr/local/PrecoresHub/lang/*.json 2>/dev/null || true"
+        
+        # Directories need to be accessible
+        arch-chroot /mnt bash -c "chmod 755 /usr/local/PrecoresHub"
+        arch-chroot /mnt bash -c "chmod 755 /usr/local/PrecoresHub/lib 2>/dev/null || true"
+        arch-chroot /mnt bash -c "chmod 755 /usr/local/PrecoresHub/config 2>/dev/null || true"
+        arch-chroot /mnt bash -c "chmod 755 /usr/local/PrecoresHub/lang 2>/dev/null || true"
+        arch-chroot /mnt bash -c "chmod 755 /usr/local/PrecoresHub/plugins 2>/dev/null || true"
+        arch-chroot /mnt bash -c "chmod 755 /usr/local/PrecoresHub/docs 2>/dev/null || true"
+        
+        echo "[INFO] Creating user config directories..."
+        
+        # Create user config directory structure
+        arch-chroot /mnt bash -c "mkdir -p /home/$USERNAME/.config/precoreshub"
+        arch-chroot /mnt bash -c "mkdir -p /home/$USERNAME/.cache/precoreshub"
+        arch-chroot /mnt bash -c "mkdir -p /home/$USERNAME/.local/share/precoreshub"
+        arch-chroot /mnt bash -c "chown -R $USERNAME:$USERNAME /home/$USERNAME/.config/precoreshub"
+        arch-chroot /mnt bash -c "chown -R $USERNAME:$USERNAME /home/$USERNAME/.cache/precoreshub"
+        arch-chroot /mnt bash -c "chown -R $USERNAME:$USERNAME /home/$USERNAME/.local/share/precoreshub"
+        
+        # Create skeleton directories for future users
+        arch-chroot /mnt bash -c "mkdir -p /etc/skel/.config/precoreshub"
+        arch-chroot /mnt bash -c "mkdir -p /etc/skel/.cache/precoreshub"
+        arch-chroot /mnt bash -c "mkdir -p /etc/skel/.local/share/precoreshub"
+        
+        echo "[INFO] Creating system-wide launcher..."
+        
+        # Create system-wide launcher script with proper error handling
+        cat > /mnt/usr/local/bin/precoreshub <<'LAUNCHER_EOF'
+#!/bin/bash
+# PrecoresHub Launcher Script
+
+# Check if running as root
+if [[ $EUID -eq 0 ]]; then
+    echo "Error: Do not run PrecoresHub as root"
+    echo "Please run as a regular user"
+    exit 1
+fi
+
+# Check dependencies
+if ! command -v fzf &>/dev/null; then
+    echo "Error: fzf is not installed"
+    echo "Please install fzf: sudo pacman -S fzf"
+    exit 1
+fi
+
+if ! command -v jq &>/dev/null; then
+    echo "Error: jq is not installed"
+    echo "Please install jq: sudo pacman -S jq"
+    exit 1
+fi
+
+# Set SCRIPT_DIR for PrecoresHub
+export SCRIPT_DIR="/usr/local/PrecoresHub"
+
+# Change to PrecoresHub directory and run
+cd "$SCRIPT_DIR" && exec bash "$SCRIPT_DIR/PrecoresHub.sh" "$@"
+LAUNCHER_EOF
+        arch-chroot /mnt bash -c "chmod 755 /usr/local/bin/precoreshub"
+        
+        echo "[INFO] Creating desktop icon with fixed terminal size..."
+        
+        # Download PrecoresHub icon (if available) or create a placeholder
+        arch-chroot /mnt bash -c "mkdir -p /usr/share/pixmaps"
+        
+        # Create desktop entry with fixed terminal size (67x25 - perfect fit)
+        mkdir -p /mnt/etc/skel/Desktop
+        mkdir -p /mnt/home/$USERNAME/Desktop
+        
+        cat > /mnt/usr/share/applications/precoreshub.desktop <<'DESKTOP_EOF'
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=PrecoresHub
+Comment=Precores Software Hub - Package Manager
+Exec=xfce4-terminal --geometry=67x25 --title="PrecoresHub" -e "bash -c 'precoreshub; exec bash'"
+Icon=utilities-terminal
+Terminal=false
+Categories=System;PackageManager;
+StartupNotify=true
+DESKTOP_EOF
+        
+        # Copy desktop file to user desktop
+        arch-chroot /mnt bash -c "cp /usr/share/applications/precoreshub.desktop /home/$USERNAME/Desktop/"
+        arch-chroot /mnt bash -c "chmod +x /home/$USERNAME/Desktop/precoreshub.desktop"
+        arch-chroot /mnt bash -c "chown $USERNAME:$USERNAME /home/$USERNAME/Desktop/precoreshub.desktop"
+        
+        # Also copy to skeleton for future users
+        arch-chroot /mnt bash -c "cp /usr/share/applications/precoreshub.desktop /etc/skel/Desktop/"
+        arch-chroot /mnt bash -c "chmod +x /etc/skel/Desktop/precoreshub.desktop"
+        
+        echo "[INFO] Verifying installation..."
+        
+        # Verify installation
+        if [ -f /mnt/usr/local/PrecoresHub/PrecoresHub.sh ] && [ -x /mnt/usr/local/PrecoresHub/PrecoresHub.sh ]; then
+            echo "[SUCCESS] PrecoresHub installed successfully"
+            echo "[INFO] Location: /usr/local/PrecoresHub"
+            echo "[INFO] Run with: precoreshub (from anywhere)"
+            echo "[INFO] Desktop icon created with fixed 67x25 terminal size"
+            echo "[INFO] User config: ~/.config/precoreshub"
+            echo "[INFO] Cache: ~/.cache/precoreshub"
+            echo "[INFO] Permissions: 755 (readable and executable)"
+        else
+            echo "[ERROR] PrecoresHub installation verification failed"
+            return 1
+        fi
+        
+        # Cleanup - Remove tar file and temp directory
+        echo "[INFO] Cleaning up temporary files..."
+        arch-chroot /mnt bash -c "rm -rf /tmp/PrecoresHub /tmp/PrecoresHub.tar.gz"
         
     } >> "$LOG_FILE" 2>&1
     
-    log_silent "PrecoresHub installed"
+    log_silent "PrecoresHub installed to /usr/local/ with proper permissions"
 }
 
 ################################################################################
