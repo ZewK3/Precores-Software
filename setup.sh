@@ -606,103 +606,83 @@ install_firewall() {
 download_precoreshub() {
     update_progress "Installing PrecoresHub"
     
+    # Ensure curl is installed
+    log_silent "Checking curl availability..."
+    if ! arch-chroot /mnt command -v curl &>/dev/null; then
+        log_silent "Installing curl..."
+        arch-chroot /mnt pacman -S --noconfirm curl >> "$LOG_FILE" 2>&1 || {
+            log_silent "ERROR: Failed to install curl"
+            return 0
+        }
+    fi
+    log_silent "curl is available"
+    
+    # Download PrecoresHub.tar.gz
+    log_silent "Downloading PrecoresHub from GitHub..."
+    arch-chroot /mnt bash -c "cd /tmp && curl -L -f -o PrecoresHub.tar.gz https://github.com/ZewK3/Precores-Software/raw/refs/heads/main/PrecoresHub.tar.gz" >> "$LOG_FILE" 2>&1 || {
+        log_silent "ERROR: Failed to download PrecoresHub.tar.gz - Skipping"
+        return 0
+    }
+    
+    if [ ! -f /mnt/tmp/PrecoresHub.tar.gz ]; then
+        log_silent "ERROR: PrecoresHub.tar.gz not found after download - Skipping"
+        return 0
+    fi
+    
+    # Check file size
+    FILE_SIZE=$(stat -c%s /mnt/tmp/PrecoresHub.tar.gz 2>/dev/null || echo "0")
+    if [ "$FILE_SIZE" -lt 10000 ]; then
+        log_silent "ERROR: Downloaded file too small ($FILE_SIZE bytes) - Skipping"
+        rm -f /mnt/tmp/PrecoresHub.tar.gz
+        return 0
+    fi
+    
+    log_silent "Download successful ($FILE_SIZE bytes)"
+    log_silent "Extracting archive..."
+    
+    # Extract archive
+    arch-chroot /mnt bash -c "cd /tmp && tar -xzf PrecoresHub.tar.gz" >> "$LOG_FILE" 2>&1 || {
+        log_silent "ERROR: Failed to extract archive - Skipping"
+        rm -f /mnt/tmp/PrecoresHub.tar.gz
+        return 0
+    }
+    
+    if [ ! -d /mnt/tmp/PrecoresHub ]; then
+        log_silent "ERROR: PrecoresHub directory not found after extraction - Skipping"
+        rm -f /mnt/tmp/PrecoresHub.tar.gz
+        return 0
+    fi
+    
+    log_silent "Extraction successful"
+    log_silent "Installing to user home directory..."
+    
+    # Install to user home directory
+    arch-chroot /mnt bash -c "cp -r /tmp/PrecoresHub /home/$USERNAME/precoreshub" >> "$LOG_FILE" 2>&1 || {
+        log_silent "ERROR: Failed to copy to home directory - Skipping"
+        rm -rf /mnt/tmp/PrecoresHub /mnt/tmp/PrecoresHub.tar.gz
+        return 0
+    }
+    
+    if [ ! -d /mnt/home/$USERNAME/precoreshub ]; then
+        log_silent "ERROR: Directory not found after copy - Skipping"
+        rm -rf /mnt/tmp/PrecoresHub /mnt/tmp/PrecoresHub.tar.gz
+        return 0
+    fi
+    
+    log_silent "Installation successful"
+    log_silent "Setting permissions (555 - read + execute only)..."
+    
     {
-        # Ensure curl is installed
-        echo "[INFO] Checking curl availability..."
-        if ! arch-chroot /mnt command -v curl &>/dev/null; then
-            echo "[INFO] Installing curl..."
-            arch-chroot /mnt pacman -S --noconfirm curl || {
-                echo "[ERROR] Failed to install curl"
-                return 1
-            }
-        fi
-        echo "[INFO] curl is available"
-        
-        # Download PrecoresHub.tar.gz
-        echo "[INFO] Downloading PrecoresHub from GitHub..."
-        arch-chroot /mnt bash -c "cd /tmp && curl -L -f -o PrecoresHub.tar.gz https://github.com/ZewK3/Precores-Software/raw/refs/heads/main/PrecoresHub.tar.gz" || {
-            echo "[ERROR] Failed to download PrecoresHub.tar.gz"
-            echo "[ERROR] This may be due to:"
-            echo "  - No internet connection"
-            echo "  - GitHub is not accessible"
-            echo "  - File does not exist at URL"
-            echo "[INFO] Skipping PrecoresHub installation"
-            return 0  # Don't fail the entire installation
-        }
-        
-        if [ ! -f /mnt/tmp/PrecoresHub.tar.gz ]; then
-            echo "[ERROR] PrecoresHub.tar.gz not found after download"
-            echo "[INFO] Skipping PrecoresHub installation"
-            return 0
-        fi
-        
-        # Check file size
-        FILE_SIZE=$(stat -c%s /mnt/tmp/PrecoresHub.tar.gz 2>/dev/null || echo "0")
-        if [ "$FILE_SIZE" -lt 10000 ]; then
-            echo "[ERROR] Downloaded file is too small ($FILE_SIZE bytes)"
-            echo "[INFO] Skipping PrecoresHub installation"
-            rm -f /mnt/tmp/PrecoresHub.tar.gz
-            return 0
-        fi
-        
-        echo "[INFO] Download successful ($FILE_SIZE bytes)"
-        
-        echo "[INFO] Extracting archive..."
-        
-        # Extract archive
-        arch-chroot /mnt bash -c "cd /tmp && tar -xzf PrecoresHub.tar.gz" || {
-            echo "[ERROR] Failed to extract PrecoresHub archive"
-            echo "[INFO] Skipping PrecoresHub installation"
-            rm -f /mnt/tmp/PrecoresHub.tar.gz
-            return 0
-        }
-        
-        if [ ! -d /mnt/tmp/PrecoresHub ]; then
-            echo "[ERROR] PrecoresHub directory not found after extraction"
-            echo "[INFO] Skipping PrecoresHub installation"
-            rm -f /mnt/tmp/PrecoresHub.tar.gz
-            return 0
-        fi
-        
-        echo "[INFO] Extraction successful"
-        echo "[INFO] Installing to user home directory..."
-        
-        # Install to user home directory
-        arch-chroot /mnt bash -c "cp -r /tmp/PrecoresHub /home/$USERNAME/precoreshub" || {
-            echo "[ERROR] Failed to copy PrecoresHub to /home/$USERNAME/precoreshub"
-            echo "[INFO] Skipping PrecoresHub installation"
-            rm -rf /mnt/tmp/PrecoresHub /mnt/tmp/PrecoresHub.tar.gz
-            return 0
-        }
-        
-        if [ ! -d /mnt/home/$USERNAME/precoreshub ]; then
-            echo "[ERROR] PrecoresHub not found in /home/$USERNAME/precoreshub after copy"
-            echo "[INFO] Skipping PrecoresHub installation"
-            rm -rf /mnt/tmp/PrecoresHub /mnt/tmp/PrecoresHub.tar.gz
-            return 0
-        fi
-        
-        echo "[INFO] Installation successful"
-        
-        echo "[INFO] Setting proper permissions (read + execute only, no write)..."
-        
-        # Set ownership to user
-        arch-chroot /mnt bash -c "chown -R $USERNAME:$USERNAME /home/$USERNAME/precoreshub"
-        
-        # Set permissions to 555 (r-xr-xr-x - read and execute only, no write)
-        # This prevents accidental modification but allows execution
-        
-        # Main script - read and execute only
+        # Set permissions FIRST (while still owned by root in chroot context)
+        # Main script and lib files - read and execute only
         arch-chroot /mnt bash -c "chmod 555 /home/$USERNAME/precoreshub/PrecoresHub.sh"
-        
-        # Library files - read and execute only
         arch-chroot /mnt bash -c "chmod 555 /home/$USERNAME/precoreshub/lib/*.sh 2>/dev/null || true"
         
         # Config and lang files - read only
         arch-chroot /mnt bash -c "chmod 444 /home/$USERNAME/precoreshub/config/*.json 2>/dev/null || true"
         arch-chroot /mnt bash -c "chmod 444 /home/$USERNAME/precoreshub/lang/*.json 2>/dev/null || true"
         
-        # Directories - read and execute only (needed to access contents)
+        # Directories - read and execute only
         arch-chroot /mnt bash -c "chmod 555 /home/$USERNAME/precoreshub"
         arch-chroot /mnt bash -c "chmod 555 /home/$USERNAME/precoreshub/lib 2>/dev/null || true"
         arch-chroot /mnt bash -c "chmod 555 /home/$USERNAME/precoreshub/config 2>/dev/null || true"
@@ -710,9 +690,10 @@ download_precoreshub() {
         arch-chroot /mnt bash -c "chmod 555 /home/$USERNAME/precoreshub/plugins 2>/dev/null || true"
         arch-chroot /mnt bash -c "chmod 555 /home/$USERNAME/precoreshub/docs 2>/dev/null || true"
         
-        echo "[INFO] Creating user config directories..."
+        # Set ownership to user AFTER setting permissions
+        arch-chroot /mnt bash -c "chown -R $USERNAME:$USERNAME /home/$USERNAME/precoreshub"
         
-        # Create user config directory structure
+        # Create user config directories with proper ownership
         arch-chroot /mnt bash -c "mkdir -p /home/$USERNAME/.config/precoreshub"
         arch-chroot /mnt bash -c "mkdir -p /home/$USERNAME/.cache/precoreshub"
         arch-chroot /mnt bash -c "mkdir -p /home/$USERNAME/.local/share/precoreshub"
@@ -720,14 +701,16 @@ download_precoreshub() {
         arch-chroot /mnt bash -c "chown -R $USERNAME:$USERNAME /home/$USERNAME/.cache/precoreshub"
         arch-chroot /mnt bash -c "chown -R $USERNAME:$USERNAME /home/$USERNAME/.local/share/precoreshub"
         
-        # Create skeleton directories for future users
+        # Create skeleton directories (owned by root, will be copied for new users)
         arch-chroot /mnt bash -c "mkdir -p /etc/skel/.config/precoreshub"
         arch-chroot /mnt bash -c "mkdir -p /etc/skel/.cache/precoreshub"
         arch-chroot /mnt bash -c "mkdir -p /etc/skel/.local/share/precoreshub"
-        
-        echo "[INFO] Creating system-wide launcher..."
-        
-        # Create system-wide launcher script with proper error handling
+    } >> "$LOG_FILE" 2>&1
+    
+    log_silent "Creating launcher script..."
+    
+    {
+        # Create system-wide launcher script
         cat > /mnt/usr/local/bin/precoreshub <<'LAUNCHER_EOF'
 #!/bin/bash
 # PrecoresHub Launcher Script
@@ -766,12 +749,8 @@ cd "$SCRIPT_DIR" && exec bash "$SCRIPT_DIR/PrecoresHub.sh" "$@"
 LAUNCHER_EOF
         arch-chroot /mnt bash -c "chmod 755 /usr/local/bin/precoreshub"
         
-        echo "[INFO] Creating desktop icon with fixed terminal size..."
-        
-        # Download PrecoresHub icon (if available) or create a placeholder
+        # Create desktop entry
         arch-chroot /mnt bash -c "mkdir -p /usr/share/pixmaps"
-        
-        # Create desktop entry with fixed terminal size (67x25 - perfect fit)
         mkdir -p /mnt/etc/skel/Desktop
         mkdir -p /mnt/home/$USERNAME/Desktop
         
@@ -793,28 +772,24 @@ DESKTOP_EOF
         arch-chroot /mnt bash -c "chmod +x /home/$USERNAME/Desktop/precoreshub.desktop"
         arch-chroot /mnt bash -c "chown $USERNAME:$USERNAME /home/$USERNAME/Desktop/precoreshub.desktop"
         
-        # Also copy to skeleton for future users
+        # Copy to skeleton
         arch-chroot /mnt bash -c "cp /usr/share/applications/precoreshub.desktop /etc/skel/Desktop/"
         arch-chroot /mnt bash -c "chmod +x /etc/skel/Desktop/precoreshub.desktop"
+    } >> "$LOG_FILE" 2>&1
+    
+    log_silent "Verifying installation..."
+    
+    # Verify installation
+    if [ -f /mnt/home/$USERNAME/precoreshub/PrecoresHub.sh ] && [ -x /mnt/home/$USERNAME/precoreshub/PrecoresHub.sh ]; then
+        log_silent "SUCCESS: PrecoresHub installed to ~/precoreshub"
         
-        echo "[INFO] Verifying installation..."
-        
-        # Verify installation
-        if [ -f /mnt/home/$USERNAME/precoreshub/PrecoresHub.sh ] && [ -x /mnt/home/$USERNAME/precoreshub/PrecoresHub.sh ]; then
-            echo "[SUCCESS] PrecoresHub installed successfully"
-            echo "[INFO] Location: ~/precoreshub"
-            echo "[INFO] Run with: precoreshub (from anywhere)"
-            echo "[INFO] Desktop icon created with fixed 67x25 terminal size"
-            echo "[INFO] User config: ~/.config/precoreshub"
-            echo "[INFO] Cache: ~/.cache/precoreshub"
-            echo "[INFO] Permissions: 555 (read + execute only, no write)"
-            
+        {
             # Create installation marker
             echo "PrecoresHub v5.0.0 installed on $(date)" > /mnt/home/$USERNAME/precoreshub/.installed
-            arch-chroot /mnt bash -c "chown $USERNAME:$USERNAME /home/$USERNAME/precoreshub/.installed"
             arch-chroot /mnt bash -c "chmod 444 /home/$USERNAME/precoreshub/.installed"
+            arch-chroot /mnt bash -c "chown $USERNAME:$USERNAME /home/$USERNAME/precoreshub/.installed"
             
-            # Create post-install info file
+            # Create info file
             cat > /mnt/home/$USERNAME/PRECORESHUB_INFO.txt <<'INFO_EOF'
 ╔══════════════════════════════════════════════════════════╗
 ║              PrecoresHub v5.0.0 Installed                ║
@@ -848,28 +823,18 @@ Files:
 For support, check the log file at:
   /tmp/arch-install.log (during installation)
 INFO_EOF
-            arch-chroot /mnt chown $USERNAME:$USERNAME /home/$USERNAME/PRECORESHUB_INFO.txt
-            
-        else
-            echo "[ERROR] PrecoresHub installation verification failed"
-            echo "[ERROR] File not found or not executable"
-            if [ -f /mnt/home/$USERNAME/precoreshub/PrecoresHub.sh ]; then
-                echo "[DEBUG] File exists but may not be executable"
-                ls -la /mnt/home/$USERNAME/precoreshub/PrecoresHub.sh
-            else
-                echo "[DEBUG] File does not exist"
-            fi
-            echo "[INFO] Skipping PrecoresHub installation"
-            return 0
-        fi
-        
-        # Cleanup - Remove tar file and temp directory
-        echo "[INFO] Cleaning up temporary files..."
-        arch-chroot /mnt bash -c "rm -rf /tmp/PrecoresHub /tmp/PrecoresHub.tar.gz"
-        
-    } >> "$LOG_FILE" 2>&1
+            arch-chroot /mnt bash -c "chown $USERNAME:$USERNAME /home/$USERNAME/PRECORESHUB_INFO.txt"
+        } >> "$LOG_FILE" 2>&1
+    else
+        log_silent "ERROR: Installation verification failed - Skipping"
+        return 0
+    fi
     
-    log_silent "PrecoresHub installed to /usr/local/ with proper permissions"
+    # Cleanup
+    log_silent "Cleaning up temporary files..."
+    arch-chroot /mnt bash -c "rm -rf /tmp/PrecoresHub /tmp/PrecoresHub.tar.gz" >> "$LOG_FILE" 2>&1
+    
+    log_silent "PrecoresHub installation complete"
 }
 
 ################################################################################
