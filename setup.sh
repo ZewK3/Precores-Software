@@ -40,7 +40,7 @@ LOG_FILE="/tmp/arch-install.log"
 # Progress Bar System with Beautiful UI
 ################################################################################
 
-TOTAL_STEPS=14
+TOTAL_STEPS=19
 CURRENT_STEP=0
 PROGRESS_BAR_WIDTH=56  # Optimized for logo alignment
 
@@ -607,34 +607,82 @@ download_precoreshub() {
     update_progress "Installing PrecoresHub"
     
     {
+        # Ensure curl is installed
+        echo "[INFO] Checking curl availability..."
+        if ! arch-chroot /mnt command -v curl &>/dev/null; then
+            echo "[INFO] Installing curl..."
+            arch-chroot /mnt pacman -S --noconfirm curl || {
+                echo "[ERROR] Failed to install curl"
+                return 1
+            }
+        fi
+        echo "[INFO] curl is available"
+        
         # Download PrecoresHub.tar.gz
         echo "[INFO] Downloading PrecoresHub from GitHub..."
-        arch-chroot /mnt bash -c "cd /tmp && curl -L -o PrecoresHub.tar.gz https://github.com/ZewK3/Precores-Software/raw/refs/heads/main/PrecoresHub.tar.gz"
+        arch-chroot /mnt bash -c "cd /tmp && curl -L -f -o PrecoresHub.tar.gz https://github.com/ZewK3/Precores-Software/raw/refs/heads/main/PrecoresHub.tar.gz" || {
+            echo "[ERROR] Failed to download PrecoresHub.tar.gz"
+            echo "[ERROR] This may be due to:"
+            echo "  - No internet connection"
+            echo "  - GitHub is not accessible"
+            echo "  - File does not exist at URL"
+            echo "[INFO] Skipping PrecoresHub installation"
+            return 0  # Don't fail the entire installation
+        }
         
         if [ ! -f /mnt/tmp/PrecoresHub.tar.gz ]; then
-            echo "[ERROR] Failed to download PrecoresHub.tar.gz"
-            return 1
+            echo "[ERROR] PrecoresHub.tar.gz not found after download"
+            echo "[INFO] Skipping PrecoresHub installation"
+            return 0
         fi
         
-        echo "[INFO] Download successful, extracting..."
+        # Check file size
+        FILE_SIZE=$(stat -c%s /mnt/tmp/PrecoresHub.tar.gz 2>/dev/null || echo "0")
+        if [ "$FILE_SIZE" -lt 10000 ]; then
+            echo "[ERROR] Downloaded file is too small ($FILE_SIZE bytes)"
+            echo "[INFO] Skipping PrecoresHub installation"
+            rm -f /mnt/tmp/PrecoresHub.tar.gz
+            return 0
+        fi
+        
+        echo "[INFO] Download successful ($FILE_SIZE bytes)"
+        
+        echo "[INFO] Extracting archive..."
         
         # Extract archive
-        arch-chroot /mnt bash -c "cd /tmp && tar -xzf PrecoresHub.tar.gz"
+        arch-chroot /mnt bash -c "cd /tmp && tar -xzf PrecoresHub.tar.gz" || {
+            echo "[ERROR] Failed to extract PrecoresHub archive"
+            echo "[INFO] Skipping PrecoresHub installation"
+            rm -f /mnt/tmp/PrecoresHub.tar.gz
+            return 0
+        }
         
         if [ ! -d /mnt/tmp/PrecoresHub ]; then
-            echo "[ERROR] Failed to extract PrecoresHub archive"
-            return 1
+            echo "[ERROR] PrecoresHub directory not found after extraction"
+            echo "[INFO] Skipping PrecoresHub installation"
+            rm -f /mnt/tmp/PrecoresHub.tar.gz
+            return 0
         fi
         
-        echo "[INFO] Extraction successful, installing to /usr/local/..."
+        echo "[INFO] Extraction successful"
+        echo "[INFO] Installing to /usr/local/..."
         
         # Install to /usr/local/PrecoresHub (system-wide installation)
-        arch-chroot /mnt bash -c "cp -r /tmp/PrecoresHub /usr/local/"
+        arch-chroot /mnt bash -c "cp -r /tmp/PrecoresHub /usr/local/" || {
+            echo "[ERROR] Failed to copy PrecoresHub to /usr/local/"
+            echo "[INFO] Skipping PrecoresHub installation"
+            rm -rf /mnt/tmp/PrecoresHub /mnt/tmp/PrecoresHub.tar.gz
+            return 0
+        }
         
         if [ ! -d /mnt/usr/local/PrecoresHub ]; then
-            echo "[ERROR] Failed to copy PrecoresHub to /usr/local/"
-            return 1
+            echo "[ERROR] PrecoresHub not found in /usr/local/ after copy"
+            echo "[INFO] Skipping PrecoresHub installation"
+            rm -rf /mnt/tmp/PrecoresHub /mnt/tmp/PrecoresHub.tar.gz
+            return 0
         fi
+        
+        echo "[INFO] Installation successful"
         
         echo "[INFO] Setting proper permissions..."
         
@@ -752,9 +800,52 @@ DESKTOP_EOF
             echo "[INFO] User config: ~/.config/precoreshub"
             echo "[INFO] Cache: ~/.cache/precoreshub"
             echo "[INFO] Permissions: 755 (readable and executable)"
+            
+            # Create installation marker
+            echo "PrecoresHub v5.0.0 installed on $(date)" > /mnt/usr/local/PrecoresHub/.installed
+            
+            # Create post-install info file
+            cat > /mnt/home/$USERNAME/PRECORESHUB_INFO.txt <<'INFO_EOF'
+╔══════════════════════════════════════════════════════════╗
+║              PrecoresHub v5.0.0 Installed                ║
+╚══════════════════════════════════════════════════════════╝
+
+Installation Location: /usr/local/PrecoresHub
+
+How to Run:
+  1. Open terminal
+  2. Type: precoreshub
+  3. Or click the PrecoresHub icon on Desktop
+
+Troubleshooting:
+  • If command not found: Check /usr/local/bin/precoreshub exists
+  • If permission denied: Check file permissions with ls -la
+  • If fzf error: Install fzf with: sudo pacman -S fzf
+  • If jq error: Install jq with: sudo pacman -S jq
+
+Files:
+  • Main: /usr/local/PrecoresHub/PrecoresHub.sh
+  • Launcher: /usr/local/bin/precoreshub
+  • Desktop: ~/Desktop/precoreshub.desktop
+  • Config: ~/.config/precoreshub/
+  • Cache: ~/.cache/precoreshub/
+
+For support, check the log file at:
+  /tmp/arch-install.log (during installation)
+INFO_EOF
+            arch-chroot /mnt chown $USERNAME:$USERNAME /home/$USERNAME/PRECORESHUB_INFO.txt
+            
         else
             echo "[ERROR] PrecoresHub installation verification failed"
-            return 1
+            echo "[ERROR] File not found or not executable"
+            if [ -f /mnt/usr/local/PrecoresHub/PrecoresHub.sh ]; then
+                echo "[DEBUG] File exists but may not be executable"
+                ls -la /mnt/usr/local/PrecoresHub/PrecoresHub.sh
+            else
+                echo "[DEBUG] File does not exist"
+            fi
+            echo "[INFO] Skipping PrecoresHub installation"
+            return 0
         fi
         
         # Cleanup - Remove tar file and temp directory
