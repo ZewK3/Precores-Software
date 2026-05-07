@@ -665,18 +665,18 @@ download_precoreshub() {
         fi
         
         echo "[INFO] Extraction successful"
-        echo "[INFO] Installing to /usr/local/..."
+        echo "[INFO] Installing to user home directory..."
         
-        # Install to /usr/local/PrecoresHub (system-wide installation)
-        arch-chroot /mnt bash -c "cp -r /tmp/PrecoresHub /usr/local/" || {
-            echo "[ERROR] Failed to copy PrecoresHub to /usr/local/"
+        # Install to user home directory
+        arch-chroot /mnt bash -c "cp -r /tmp/PrecoresHub /home/$USERNAME/precoreshub" || {
+            echo "[ERROR] Failed to copy PrecoresHub to /home/$USERNAME/precoreshub"
             echo "[INFO] Skipping PrecoresHub installation"
             rm -rf /mnt/tmp/PrecoresHub /mnt/tmp/PrecoresHub.tar.gz
             return 0
         }
         
-        if [ ! -d /mnt/usr/local/PrecoresHub ]; then
-            echo "[ERROR] PrecoresHub not found in /usr/local/ after copy"
+        if [ ! -d /mnt/home/$USERNAME/precoreshub ]; then
+            echo "[ERROR] PrecoresHub not found in /home/$USERNAME/precoreshub after copy"
             echo "[INFO] Skipping PrecoresHub installation"
             rm -rf /mnt/tmp/PrecoresHub /mnt/tmp/PrecoresHub.tar.gz
             return 0
@@ -684,29 +684,31 @@ download_precoreshub() {
         
         echo "[INFO] Installation successful"
         
-        echo "[INFO] Setting proper permissions..."
+        echo "[INFO] Setting proper permissions (read + execute only, no write)..."
         
-        # Set ownership to root
-        arch-chroot /mnt bash -c "chown -R root:root /usr/local/PrecoresHub"
+        # Set ownership to user
+        arch-chroot /mnt bash -c "chown -R $USERNAME:$USERNAME /home/$USERNAME/precoreshub"
         
-        # Set proper permissions (755 = rwxr-xr-x - readable and executable by all)
-        # Main script needs to be readable and executable
-        arch-chroot /mnt bash -c "chmod 755 /usr/local/PrecoresHub/PrecoresHub.sh"
+        # Set permissions to 555 (r-xr-xr-x - read and execute only, no write)
+        # This prevents accidental modification but allows execution
         
-        # Library files need to be readable and executable
-        arch-chroot /mnt bash -c "chmod 755 /usr/local/PrecoresHub/lib/*.sh 2>/dev/null || true"
+        # Main script - read and execute only
+        arch-chroot /mnt bash -c "chmod 555 /home/$USERNAME/precoreshub/PrecoresHub.sh"
         
-        # Config and lang files need to be readable
-        arch-chroot /mnt bash -c "chmod 644 /usr/local/PrecoresHub/config/*.json 2>/dev/null || true"
-        arch-chroot /mnt bash -c "chmod 644 /usr/local/PrecoresHub/lang/*.json 2>/dev/null || true"
+        # Library files - read and execute only
+        arch-chroot /mnt bash -c "chmod 555 /home/$USERNAME/precoreshub/lib/*.sh 2>/dev/null || true"
         
-        # Directories need to be accessible
-        arch-chroot /mnt bash -c "chmod 755 /usr/local/PrecoresHub"
-        arch-chroot /mnt bash -c "chmod 755 /usr/local/PrecoresHub/lib 2>/dev/null || true"
-        arch-chroot /mnt bash -c "chmod 755 /usr/local/PrecoresHub/config 2>/dev/null || true"
-        arch-chroot /mnt bash -c "chmod 755 /usr/local/PrecoresHub/lang 2>/dev/null || true"
-        arch-chroot /mnt bash -c "chmod 755 /usr/local/PrecoresHub/plugins 2>/dev/null || true"
-        arch-chroot /mnt bash -c "chmod 755 /usr/local/PrecoresHub/docs 2>/dev/null || true"
+        # Config and lang files - read only
+        arch-chroot /mnt bash -c "chmod 444 /home/$USERNAME/precoreshub/config/*.json 2>/dev/null || true"
+        arch-chroot /mnt bash -c "chmod 444 /home/$USERNAME/precoreshub/lang/*.json 2>/dev/null || true"
+        
+        # Directories - read and execute only (needed to access contents)
+        arch-chroot /mnt bash -c "chmod 555 /home/$USERNAME/precoreshub"
+        arch-chroot /mnt bash -c "chmod 555 /home/$USERNAME/precoreshub/lib 2>/dev/null || true"
+        arch-chroot /mnt bash -c "chmod 555 /home/$USERNAME/precoreshub/config 2>/dev/null || true"
+        arch-chroot /mnt bash -c "chmod 555 /home/$USERNAME/precoreshub/lang 2>/dev/null || true"
+        arch-chroot /mnt bash -c "chmod 555 /home/$USERNAME/precoreshub/plugins 2>/dev/null || true"
+        arch-chroot /mnt bash -c "chmod 555 /home/$USERNAME/precoreshub/docs 2>/dev/null || true"
         
         echo "[INFO] Creating user config directories..."
         
@@ -750,8 +752,14 @@ if ! command -v jq &>/dev/null; then
     exit 1
 fi
 
-# Set SCRIPT_DIR for PrecoresHub
-export SCRIPT_DIR="/usr/local/PrecoresHub"
+# Set SCRIPT_DIR to user home directory
+export SCRIPT_DIR="$HOME/precoreshub"
+
+# Check if PrecoresHub exists
+if [ ! -d "$SCRIPT_DIR" ]; then
+    echo "Error: PrecoresHub not found at $SCRIPT_DIR"
+    exit 1
+fi
 
 # Change to PrecoresHub directory and run
 cd "$SCRIPT_DIR" && exec bash "$SCRIPT_DIR/PrecoresHub.sh" "$@"
@@ -792,17 +800,19 @@ DESKTOP_EOF
         echo "[INFO] Verifying installation..."
         
         # Verify installation
-        if [ -f /mnt/usr/local/PrecoresHub/PrecoresHub.sh ] && [ -x /mnt/usr/local/PrecoresHub/PrecoresHub.sh ]; then
+        if [ -f /mnt/home/$USERNAME/precoreshub/PrecoresHub.sh ] && [ -x /mnt/home/$USERNAME/precoreshub/PrecoresHub.sh ]; then
             echo "[SUCCESS] PrecoresHub installed successfully"
-            echo "[INFO] Location: /usr/local/PrecoresHub"
+            echo "[INFO] Location: ~/precoreshub"
             echo "[INFO] Run with: precoreshub (from anywhere)"
             echo "[INFO] Desktop icon created with fixed 67x25 terminal size"
             echo "[INFO] User config: ~/.config/precoreshub"
             echo "[INFO] Cache: ~/.cache/precoreshub"
-            echo "[INFO] Permissions: 755 (readable and executable)"
+            echo "[INFO] Permissions: 555 (read + execute only, no write)"
             
             # Create installation marker
-            echo "PrecoresHub v5.0.0 installed on $(date)" > /mnt/usr/local/PrecoresHub/.installed
+            echo "PrecoresHub v5.0.0 installed on $(date)" > /mnt/home/$USERNAME/precoreshub/.installed
+            arch-chroot /mnt bash -c "chown $USERNAME:$USERNAME /home/$USERNAME/precoreshub/.installed"
+            arch-chroot /mnt bash -c "chmod 444 /home/$USERNAME/precoreshub/.installed"
             
             # Create post-install info file
             cat > /mnt/home/$USERNAME/PRECORESHUB_INFO.txt <<'INFO_EOF'
@@ -810,12 +820,17 @@ DESKTOP_EOF
 ║              PrecoresHub v5.0.0 Installed                ║
 ╚══════════════════════════════════════════════════════════╝
 
-Installation Location: /usr/local/PrecoresHub
+Installation Location: ~/precoreshub
 
 How to Run:
   1. Open terminal
   2. Type: precoreshub
   3. Or click the PrecoresHub icon on Desktop
+
+Permissions:
+  • Files: 555 (read + execute only, no write)
+  • This prevents accidental modification
+  • You can still run all commands normally
 
 Troubleshooting:
   • If command not found: Check /usr/local/bin/precoreshub exists
@@ -824,7 +839,7 @@ Troubleshooting:
   • If jq error: Install jq with: sudo pacman -S jq
 
 Files:
-  • Main: /usr/local/PrecoresHub/PrecoresHub.sh
+  • Main: ~/precoreshub/PrecoresHub.sh
   • Launcher: /usr/local/bin/precoreshub
   • Desktop: ~/Desktop/precoreshub.desktop
   • Config: ~/.config/precoreshub/
@@ -838,9 +853,9 @@ INFO_EOF
         else
             echo "[ERROR] PrecoresHub installation verification failed"
             echo "[ERROR] File not found or not executable"
-            if [ -f /mnt/usr/local/PrecoresHub/PrecoresHub.sh ]; then
+            if [ -f /mnt/home/$USERNAME/precoreshub/PrecoresHub.sh ]; then
                 echo "[DEBUG] File exists but may not be executable"
-                ls -la /mnt/usr/local/PrecoresHub/PrecoresHub.sh
+                ls -la /mnt/home/$USERNAME/precoreshub/PrecoresHub.sh
             else
                 echo "[DEBUG] File does not exist"
             fi
