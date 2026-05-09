@@ -1,0 +1,249 @@
+<?xml version="1.0" encoding="utf-8"?>
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+
+  <!-- ======================================================== -->
+  <!-- PASS 1: windowsPE - Disk & Install Config                 -->
+  <!-- ======================================================== -->
+  <settings pass="windowsPE">
+    <component name="Microsoft-Windows-International-Core-WinPE"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+               xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <SetupUILanguage>
+        <UILanguage>en-US</UILanguage>
+      </SetupUILanguage>
+      <InputLocale>0409:00000409</InputLocale>
+      <SystemLocale>en-US</SystemLocale>
+      <UILanguage>en-US</UILanguage>
+      <UserLocale>en-US</UserLocale>
+    </component>
+
+    <component name="Microsoft-Windows-Setup"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+               xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <!-- Accept EULA automatically -->
+      <UserData>
+        <AcceptEula>true</AcceptEula>
+        <FullName>PCL</FullName>
+        <Organization>PCL</Organization>
+      </UserData>
+
+      <!-- Auto partition disk (UEFI + BIOS compatible) -->
+      <DiskConfiguration>
+        <Disk wcm:action="add">
+          <DiskID>0</DiskID>
+          <WillWipeDisk>true</WillWipeDisk>
+          <CreatePartitions>
+            <!-- EFI System Partition -->
+            <CreatePartition wcm:action="add">
+              <Order>1</Order>
+              <Size>260</Size>
+              <Type>EFI</Type>
+            </CreatePartition>
+            <!-- MSR -->
+            <CreatePartition wcm:action="add">
+              <Order>2</Order>
+              <Size>16</Size>
+              <Type>MSR</Type>
+            </CreatePartition>
+            <!-- Windows -->
+            <CreatePartition wcm:action="add">
+              <Order>3</Order>
+              <Extend>true</Extend>
+              <Type>Primary</Type>
+            </CreatePartition>
+          </CreatePartitions>
+          <ModifyPartitions>
+            <ModifyPartition wcm:action="add">
+              <Order>1</Order>
+              <PartitionID>1</PartitionID>
+              <Format>FAT32</Format>
+              <Label>System</Label>
+            </ModifyPartition>
+            <ModifyPartition wcm:action="add">
+              <Order>2</Order>
+              <PartitionID>2</PartitionID>
+            </ModifyPartition>
+            <ModifyPartition wcm:action="add">
+              <Order>3</Order>
+              <PartitionID>3</PartitionID>
+              <Format>NTFS</Format>
+              <Label>Windows</Label>
+              <Letter>C</Letter>
+            </ModifyPartition>
+          </ModifyPartitions>
+        </Disk>
+      </DiskConfiguration>
+
+      <ImageInstall>
+        <OSImage>
+          <InstallTo>
+            <DiskID>0</DiskID>
+            <PartitionID>3</PartitionID>
+          </InstallTo>
+        </OSImage>
+      </ImageInstall>
+    </component>
+  </settings>
+
+  <!-- ======================================================== -->
+  <!-- PASS 4: specialize - Computer Name & Network              -->
+  <!-- ======================================================== -->
+  <settings pass="specialize">
+    <component name="Microsoft-Windows-Shell-Setup"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+               xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <ComputerName>PCL-PC</ComputerName>
+      <TimeZone>SE Asia Standard Time</TimeZone>
+      <RegisteredOwner>PCL</RegisteredOwner>
+      <RegisteredOrganization>PCL</RegisteredOrganization>
+    </component>
+
+    <!-- Disable UAC for smoother setup -->
+    <component name="Microsoft-Windows-LUA-Settings"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+               xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <EnableLUA>false</EnableLUA>
+    </component>
+  </settings>
+
+  <!-- ======================================================== -->
+  <!-- PASS 7: oobeSystem - User, AutoLogin, Skip OOBE           -->
+  <!-- ======================================================== -->
+  <settings pass="oobeSystem">
+    <component name="Microsoft-Windows-Shell-Setup"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+               xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+      <!-- Create user PCL with admin rights -->
+      <UserAccounts>
+        <LocalAccounts>
+          <LocalAccount wcm:action="add">
+            <Name>PCL</Name>
+            <Group>Administrators</Group>
+            <Password>
+              <Value>PCL@1231233</Value>
+              <PlainText>true</PlainText>
+            </Password>
+          </LocalAccount>
+        </LocalAccounts>
+      </UserAccounts>
+
+      <!-- Auto-login (permanent) -->
+      <AutoLogon>
+        <Enabled>true</Enabled>
+        <Username>PCL</Username>
+        <Password>
+          <Value>PCL@1231233</Value>
+          <PlainText>true</PlainText>
+        </Password>
+        <LogonCount>9999</LogonCount>
+      </AutoLogon>
+
+      <!-- Skip ALL OOBE screens -->
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage>
+        <HideLocalAccountScreen>true</HideLocalAccountScreen>
+        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
+        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+        <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+        <NetworkLocation>Work</NetworkLocation>
+        <ProtectYourPC>3</ProtectYourPC>
+        <SkipMachineOOBE>true</SkipMachineOOBE>
+        <SkipUserOOBE>true</SkipUserOOBE>
+      </OOBE>
+
+      <!-- Set high performance power plan -->
+      <FirstLogonCommands>
+        <SynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <CommandLine>cmd /c powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c</CommandLine>
+          <Description>Set High Performance Power Plan</Description>
+        </SynchronousCommand>
+        <SynchronousCommand wcm:action="add">
+          <Order>2</Order>
+          <CommandLine>cmd /c reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender" /v DisableAntiSpyware /t REG_DWORD /d 1 /f</CommandLine>
+          <Description>Ensure Defender stays disabled</Description>
+        </SynchronousCommand>
+        <SynchronousCommand wcm:action="add">
+          <Order>3</Order>
+          <CommandLine>cmd /c sc config wuauserv start= disabled</CommandLine>
+          <Description>Ensure Windows Update stays disabled</Description>
+        </SynchronousCommand>
+        <SynchronousCommand wcm:action="add">
+          <Order>4</Order>
+          <CommandLine>cmd /c sc config Spooler start= disabled</CommandLine>
+          <Description>Ensure Print Spooler stays disabled</Description>
+        </SynchronousCommand>
+        <SynchronousCommand wcm:action="add">
+          <Order>5</Order>
+          <CommandLine>cmd /c powercfg /h off</CommandLine>
+          <Description>Disable Hibernate - delete hiberfil.sys</Description>
+        </SynchronousCommand>
+        <SynchronousCommand wcm:action="add">
+          <Order>6</Order>
+          <CommandLine>cmd /c compact /compactos:always</CommandLine>
+          <Description>Enable CompactOS - saves ~2GB</Description>
+        </SynchronousCommand>
+        <SynchronousCommand wcm:action="add">
+          <Order>7</Order>
+          <CommandLine>cmd /c dism /Online /Cleanup-Image /StartComponentCleanup /ResetBase</CommandLine>
+          <Description>Cleanup WinSxS component store</Description>
+        </SynchronousCommand>
+        <SynchronousCommand wcm:action="add">
+          <Order>8</Order>
+          <CommandLine>cmd /c dism /Online /Set-ReservedStorageState /State:Disabled</CommandLine>
+          <Description>Disable Reserved Storage</Description>
+        </SynchronousCommand>
+        <SynchronousCommand wcm:action="add">
+          <Order>9</Order>
+          <CommandLine>cmd /c del /f /q "%SystemRoot%\Temp\*" 2>nul</CommandLine>
+          <Description>Clean temp files</Description>
+        </SynchronousCommand>
+        <SynchronousCommand wcm:action="add">
+          <Order>10</Order>
+          <CommandLine>powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ZewK3/Precores-Software/main/QuickInstall.bat' -OutFile 'C:\QuickInstall.bat' -UseBasicParsing"</CommandLine>
+          <Description>Download QuickInstall.bat from GitHub</Description>
+        </SynchronousCommand>
+        <SynchronousCommand wcm:action="add">
+          <Order>11</Order>
+          <CommandLine>cmd /c if exist "C:\QuickInstall.bat" copy /y "C:\QuickInstall.bat" "%USERPROFILE%\Desktop\QuickInstall.bat"</CommandLine>
+          <Description>Copy QuickInstall.bat to Desktop</Description>
+        </SynchronousCommand>
+        <SynchronousCommand wcm:action="add">
+          <Order>12</Order>
+          <CommandLine>cmd /c if exist "C:\QuickInstall.bat" start "" "C:\QuickInstall.bat"</CommandLine>
+          <Description>Auto-run QuickInstall.bat</Description>
+        </SynchronousCommand>
+      </FirstLogonCommands>
+
+    </component>
+
+    <component name="Microsoft-Windows-International-Core"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+               xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <InputLocale>0409:00000409</InputLocale>
+      <SystemLocale>en-US</SystemLocale>
+      <UILanguage>en-US</UILanguage>
+      <UserLocale>en-US</UserLocale>
+    </component>
+  </settings>
+
+</unattend>
