@@ -659,9 +659,62 @@ netsh advfirewall firewall set rule group="Remote Desktop" new enable=yes >nul 2
 sc config TermService start= auto >nul 2>&1
 sc start TermService >nul 2>&1
 
-echo   Remote Desktop enabled.
-echo   Connect via: mstsc /v:%COMPUTERNAME%
-echo   Remote Desktop enabled >> "%LOG%"
+:: ---- RDP Performance (mRemoteNG optimization) ----
+
+:: Color depth 32-bit (best quality for dev work)
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v ColorDepth /t REG_DWORD /d 4 /f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v ColorDepthPolicy /t REG_DWORD /d 1 /f >nul
+echo   - RDP color depth: 32-bit
+
+:: Enable bitmap caching (reduces bandwidth)
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v AllowBitmapCaching /t REG_DWORD /d 1 /f >nul
+echo   - Bitmap caching enabled
+
+:: Enable RemoteFX hardware GPU encoding
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fEnableRemoteFXAdvancedRemoteApp /t REG_DWORD /d 1 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v bEnumerateHWBeforeSW /t REG_DWORD /d 1 /f >nul
+echo   - RemoteFX enabled
+
+:: AVC/H.264 hardware encoding (smoother video)
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v AVC444ModePreferred /t REG_DWORD /d 1 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v AVCHardwareEncodePreferred /t REG_DWORD /d 1 /f >nul
+echo   - AVC H.264 encoding enabled
+
+:: Optimize compression (balanced CPU vs bandwidth)
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v VisualExperiencePolicy /t REG_DWORD /d 1 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v ImageQuality /t REG_DWORD /d 3 /f >nul
+
+:: Disable wallpaper/theme over RDP (faster rendering)
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fNoRemoteDesktopWallpaper /t REG_DWORD /d 1 /f >nul
+echo   - RDP wallpaper disabled (faster)
+
+:: Keep-alive interval (prevent disconnects)
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v KeepAliveEnable /t REG_DWORD /d 1 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v KeepAliveInterval /t REG_DWORD /d 1 /f >nul
+
+:: Allow multiple simultaneous RDP sessions
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server" /v fSingleSessionPerUser /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v MaxInstanceCount /t REG_DWORD /d 10 /f >nul
+echo   - Multiple RDP sessions allowed
+
+:: Disable RDP security warning prompts
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v SecurityLayer /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v MinEncryptionLevel /t REG_DWORD /d 1 /f >nul
+echo   - RDP security prompts disabled
+
+:: Audio redirection over RDP (disabled for performance)
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fDisableCam /t REG_DWORD /d 1 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fDisablePNPRedir /t REG_DWORD /d 1 /f >nul
+echo   - Camera/PnP redirection disabled
+
+:: Faster screen updates
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v MaxMonitors /t REG_DWORD /d 4 /f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v MaxXResolution /t REG_DWORD /d 3840 /f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v MaxYResolution /t REG_DWORD /d 2160 /f >nul
+echo   - Max resolution: 4K, 4 monitors
+
+echo   Remote Desktop enabled + optimized for mRemoteNG.
+echo   Remote Desktop enabled + optimized >> "%LOG%"
 
 :: ============================================================
 :: PHASE 9: FINAL CLEANUP
