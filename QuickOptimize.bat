@@ -704,8 +704,8 @@ echo   - Cleaned rescache
 
 :: Old driver packages (clean unused)
 pnputil /enum-drivers >nul 2>&1 && (
-    for /f "tokens=1,2 delims=: " %%a in ('pnputil /enum-drivers ^| findstr /i "oem"') do (
-        pnputil /delete-driver %%b >nul 2>&1
+    for /f "tokens=1,2 delims=: " %%a in ('pnputil /enum-drivers 2^>nul ^| findstr /i "oem"') do (
+        pnputil /delete-driver %%b /force <nul >nul 2>&1
     )
 )
 echo   - Cleaned old driver packages
@@ -731,8 +731,9 @@ powercfg /h off
 echo   - Hibernate disabled
 
 :: Optimize pagefile (4GB RAM: generous swap so AI tools don't OOM)
-wmic computersystem where name="%COMPUTERNAME%" set AutomaticManagedPagefile=False >nul 2>&1
-wmic pagefileset where name="C:\\pagefile.sys" set InitialSize=2048,MaximumSize=6144 >nul 2>&1
+wmic computersystem where name="%COMPUTERNAME%" set AutomaticManagedPagefile=False <nul >nul 2>&1
+wmic pagefileset where name="C:\\pagefile.sys" set InitialSize=2048,MaximumSize=6144 <nul >nul 2>&1
+if not exist "C:\pagefile.sys" wmic pagefileset create name="C:\pagefile.sys" <nul >nul 2>&1
 echo   - Pagefile optimized (2GB-6GB for 4GB RAM)
 
 :: Disable Reserved Storage
@@ -741,12 +742,12 @@ echo   - Reserved Storage disabled
 
 :: Enable CompactOS
 echo   - Enabling CompactOS (saves ~2GB)...
-compact /compactos:always >nul 2>&1
+compact /compactos:always <nul >nul 2>&1
 echo   - CompactOS enabled
 
 :: WinSxS cleanup
 echo   - Cleaning WinSxS component store...
-dism /Online /Cleanup-Image /StartComponentCleanup /ResetBase >nul 2>&1
+dism /Online /Cleanup-Image /StartComponentCleanup /ResetBase <nul >nul 2>&1
 echo   - WinSxS cleaned
 
 :: ---- 4GB RAM SPECIFIC TWEAKS ----
@@ -948,8 +949,9 @@ echo     Write-Output ^(13389 + [Convert]::ToInt32^($last,16^)^)
 echo } else { Write-Output 3389 }
 ) > "%PS_PORT%"
 
-for /f %%P in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_PORT%"') do set "RDP_PORT=%%P"
+for /f "usebackq delims=" %%P in (`powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_PORT%" 2^>nul`) do set "RDP_PORT=%%P"
 del /f /q "%PS_PORT%" >nul 2>&1
+if "!RDP_PORT!"=="" set "RDP_PORT=3389"
 
 echo   - Assigned RDP port: !RDP_PORT!
 
@@ -1002,7 +1004,7 @@ echo   Log: %LOG%
 echo  =============================================
 echo.
 
-:: Self-delete
-del /f /q "C:\QuickOptimize.bat" >nul 2>&1
+:: Self-delete (works from any location)
+(goto) 2>nul & del /f /q "%~f0" >nul 2>&1
 
 endlocal
