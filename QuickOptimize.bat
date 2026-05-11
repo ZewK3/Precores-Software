@@ -1,4 +1,3 @@
-
 @echo off
 :: ============================================================
 ::  QuickOptimize.bat - Windows 10 Post-Install Optimization
@@ -10,10 +9,10 @@ title QuickOptimize - Windows Optimization
 color 0E
 setlocal EnableExtensions EnableDelayedExpansion
 
-set "LOG_FILE=C:\QuickOptimize_Log.txt"
-echo ============================================================ > "%LOG_FILE%"
-echo  QuickOptimize - Started: %DATE% %TIME% >> "%LOG_FILE%"
-echo ============================================================ >> "%LOG_FILE%"
+set "LOG=C:\QuickOptimize_Log.txt"
+echo ============================================================ > "%LOG%"
+echo  QuickOptimize - Started: %DATE% %TIME% >> "%LOG%"
+echo ============================================================ >> "%LOG%"
 
 echo.
 echo  =============================================
@@ -36,50 +35,82 @@ if %errorlevel% neq 0 (
 :: ============================================================
 echo.
 echo ============================================================
-echo  [1/8] Removing UWP Bloatware...
+echo  [1/11] Removing UWP Bloatware...
 echo ============================================================
-echo [1/8] Removing UWP Bloatware... >> "%LOG_FILE%"
+echo [1/11] Removing UWP Bloatware... >> "%LOG%"
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-"$apps = @(" ^
-"'Microsoft.BingWeather','Microsoft.GetHelp','Microsoft.Getstarted'," ^
-"'Microsoft.Microsoft3DViewer','Microsoft.MicrosoftSolitaireCollection'," ^
-"'Microsoft.MixedReality.Portal','Microsoft.MSPaint'," ^
-"'Microsoft.WindowsAlarms','Microsoft.WindowsCamera'," ^
-"'Microsoft.WindowsSoundRecorder','Microsoft.ScreenSketch'," ^
-"'Microsoft.Windows.Photos','Microsoft.WindowsFeedbackHub'," ^
-"'Microsoft.MicrosoftStickyNotes','Microsoft.WindowsMaps'," ^
-"'Microsoft.People','Microsoft.SkypeApp','Microsoft.YourPhone'," ^
-"'microsoft.windowscommunicationsapps','Microsoft.Messaging'," ^
-"'Microsoft.OneConnect','Microsoft.ZuneMusic','Microsoft.ZuneVideo'," ^
-"'Microsoft.MicrosoftOfficeHub','Microsoft.Office.OneNote'," ^
-"'Microsoft.Office.Sway','Microsoft.XboxApp'," ^
-"'Microsoft.XboxGameOverlay','Microsoft.XboxGamingOverlay'," ^
-"'Microsoft.XboxIdentityProvider','Microsoft.XboxSpeechToTextOverlay'," ^
-"'Microsoft.Xbox.TCUI','Microsoft.Advertising.Xaml'," ^
-"'Microsoft.Wallet','Microsoft.Print3D','Microsoft.3DBuilder'," ^
-"'Microsoft.BingFinance','Microsoft.BingNews','Microsoft.BingSports'," ^
-"'Microsoft.BingTranslator','Microsoft.Todos'," ^
-"'Microsoft.PowerAutomateDesktop','MicrosoftTeams'," ^
-"'MicrosoftCorporationII.QuickAssist','Clipchamp.Clipchamp'," ^
-"'Microsoft.549981C3F5F10'" ^
-"); " ^
-"foreach ($app in $apps) { " ^
-"  Get-AppxPackage -AllUsers -Name $app 2>$null | Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue; " ^
-"  Get-AppxProvisionedPackage -Online 2>$null | Where-Object {$_.DisplayName -like $app} | Remove-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue; " ^
-"  Write-Host \"  - $app\"; " ^
-"}"
+:: Write PowerShell script to temp file to avoid batch escaping issues
+set "PS_SCRIPT=%TEMP%\remove_bloatware.ps1"
+(
+echo $ProgressPreference = 'SilentlyContinue'
+echo $apps = @(
+echo     'Microsoft.BingWeather',
+echo     'Microsoft.GetHelp',
+echo     'Microsoft.Getstarted',
+echo     'Microsoft.Microsoft3DViewer',
+echo     'Microsoft.MicrosoftSolitaireCollection',
+echo     'Microsoft.MixedReality.Portal',
+echo     'Microsoft.MSPaint',
+echo     'Microsoft.WindowsAlarms',
+echo     'Microsoft.WindowsCamera',
+echo     'Microsoft.WindowsSoundRecorder',
+echo     'Microsoft.ScreenSketch',
+echo     'Microsoft.Windows.Photos',
+echo     'Microsoft.WindowsFeedbackHub',
+echo     'Microsoft.MicrosoftStickyNotes',
+echo     'Microsoft.WindowsMaps',
+echo     'Microsoft.People',
+echo     'Microsoft.SkypeApp',
+echo     'Microsoft.YourPhone',
+echo     'microsoft.windowscommunicationsapps',
+echo     'Microsoft.Messaging',
+echo     'Microsoft.OneConnect',
+echo     'Microsoft.ZuneMusic',
+echo     'Microsoft.ZuneVideo',
+echo     'Microsoft.MicrosoftOfficeHub',
+echo     'Microsoft.Office.OneNote',
+echo     'Microsoft.Office.Sway',
+echo     'Microsoft.XboxApp',
+echo     'Microsoft.XboxGameOverlay',
+echo     'Microsoft.XboxGamingOverlay',
+echo     'Microsoft.XboxIdentityProvider',
+echo     'Microsoft.XboxSpeechToTextOverlay',
+echo     'Microsoft.Xbox.TCUI',
+echo     'Microsoft.Advertising.Xaml',
+echo     'Microsoft.Wallet',
+echo     'Microsoft.Print3D',
+echo     'Microsoft.3DBuilder',
+echo     'Microsoft.BingFinance',
+echo     'Microsoft.BingNews',
+echo     'Microsoft.BingSports',
+echo     'Microsoft.BingTranslator',
+echo     'Microsoft.Todos',
+echo     'Microsoft.PowerAutomateDesktop',
+echo     'MicrosoftTeams',
+echo     'MicrosoftCorporationII.QuickAssist',
+echo     'Clipchamp.Clipchamp',
+echo     'Microsoft.Services.Store.Engagement'
+echo ^)
+echo foreach ^($app in $apps^) {
+echo     Get-AppxPackage -AllUsers -Name $app 2^>$null ^| Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue
+echo     Get-AppxProvisionedPackage -Online 2^>$null ^| Where-Object {$_.DisplayName -like $app} ^| Remove-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue
+echo     Write-Host "  - $app"
+echo }
+) > "%PS_SCRIPT%"
+
+powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%"
+del /f /q "%PS_SCRIPT%" >nul 2>&1
 echo   Done.
-echo   UWP apps removed >> "%LOG_FILE%"
+echo   UWP apps removed >> "%LOG%"
 
 :: ============================================================
 :: PHASE 2: DISABLE WINDOWS FEATURES
 :: ============================================================
 echo.
 echo ============================================================
-echo  [2/8] Disabling Windows Features...
+echo  [2/11] Disabling Windows Features...
 echo ============================================================
-echo [2/8] Disabling Windows Features... >> "%LOG_FILE%"
+echo [2/11] Disabling Windows Features... >> "%LOG%"
 
 for %%F in (
     Internet-Explorer-Optional-amd64
@@ -93,7 +124,6 @@ for %%F in (
     dism /Online /Disable-Feature /FeatureName:%%F /Remove /NoRestart >nul 2>&1
 )
 echo   Done.
-echo   Features disabled >> "%LOG_FILE%"
 
 :: Remove OneDrive
 echo [*] Removing OneDrive...
@@ -109,16 +139,16 @@ rd /s /q "%LOCALAPPDATA%\Microsoft\OneDrive" >nul 2>&1
 rd /s /q "%ProgramData%\Microsoft OneDrive" >nul 2>&1
 reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v OneDrive /f >nul 2>&1
 echo   OneDrive removed.
-echo   OneDrive removed >> "%LOG_FILE%"
+echo   Features disabled + OneDrive removed >> "%LOG%"
 
 :: ============================================================
 :: PHASE 3: DISABLE WINDOWS DEFENDER
 :: ============================================================
 echo.
 echo ============================================================
-echo  [3/8] Disabling Windows Defender...
+echo  [3/11] Disabling Windows Defender...
 echo ============================================================
-echo [3/8] Disabling Windows Defender... >> "%LOG_FILE%"
+echo [3/11] Disabling Windows Defender... >> "%LOG%"
 
 :: Registry policies
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender" /v DisableAntiSpyware /t REG_DWORD /d 1 /f >nul
@@ -169,16 +199,16 @@ for /d %%D in ("%SystemRoot%\SystemApps\Microsoft.Windows.SecHealthUI*") do (
     rmdir /s /q "%%D" >nul 2>&1
 )
 echo   Defender disabled + files removed.
-echo   Defender disabled + files removed >> "%LOG_FILE%"
+echo   Defender disabled + files removed >> "%LOG%"
 
 :: ============================================================
 :: PHASE 4: DISABLE WINDOWS UPDATE + SERVICES
 :: ============================================================
 echo.
 echo ============================================================
-echo  [4/8] Disabling Windows Update + Services...
+echo  [4/11] Disabling Windows Update + Services...
 echo ============================================================
-echo [4/8] Disabling Windows Update + Services... >> "%LOG_FILE%"
+echo [4/11] Disabling Windows Update + Services... >> "%LOG%"
 
 :: Windows Update services
 for %%S in (wuauserv WaaSMedicSvc UsoSvc BITS DoSvc) do (
@@ -215,32 +245,39 @@ if exist "%SystemRoot%\UpdateAssistant" (
     rmdir /s /q "%SystemRoot%\UpdateAssistant" >nul 2>&1
 )
 
-:: Disable 30+ unnecessary services
+:: Disable 45+ unnecessary services (keep dev-critical: WSearch, TokenBroker, InstallService, StorSvc)
 for %%S in (
     DiagTrack dmwappushservice diagnosticshub.standardcollector.service
-    WSearch SysMain MapsBroker lfsvc RetailDemo wisvc WerSvc
+    SysMain MapsBroker lfsvc RetailDemo wisvc WerSvc
     XblAuthManager XblGameSave XboxNetApiSvc XboxGipSvc
     RemoteRegistry RemoteAccess SharedAccess TrkWks
     WMPNetworkSvc WpcMonSvc SEMgrSvc PhoneSvc
     TabletInputService WbioSrvc icssvc NcbService
     PcaSvc SCardSvr ScDeviceEnum EntAppSvc AJRouter
     DmEnrollmentSvc DPS WdiServiceHost WdiSystemHost
+    WpnService WpnUserService_* CDPSvc CDPUserSvc_*
+    FrameServer stisvc edgeupdate edgeupdatem
+    lmhosts NetTcpPortSharing SmsRouter
+    OneSyncSvc_* MessagingService_*
+    PimIndexMaintenanceSvc_* UnistoreSvc_* UserDataSvc_*
+    BcastDVRUserService_* BluetoothUserService_*
+    Fax PrintWorkflowUserSvc_*
 ) do (
     sc stop %%S >nul 2>&1
     sc config %%S start= disabled >nul 2>&1
 )
 
 echo   Services disabled + files removed.
-echo   Services disabled + files removed >> "%LOG_FILE%"
+echo   Services disabled + files removed >> "%LOG%"
 
 :: ============================================================
 :: PHASE 5: REGISTRY OPTIMIZATIONS
 :: ============================================================
 echo.
 echo ============================================================
-echo  [5/8] Applying Registry Tweaks...
+echo  [5/11] Applying Registry Tweaks...
 echo ============================================================
-echo [5/8] Applying Registry Tweaks... >> "%LOG_FILE%"
+echo [5/11] Applying Registry Tweaks... >> "%LOG%"
 
 :: Telemetry
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection" /v AllowTelemetry /t REG_DWORD /d 0 /f >nul
@@ -276,6 +313,31 @@ reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management
 :: Disable background apps
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy" /v LetAppsRunInBackground /t REG_DWORD /d 2 /f >nul
 
+:: Memory optimization (small dumps only, disable paging executive)
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\CrashControl" /v CrashDumpEnabled /t REG_DWORD /d 3 /f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\CrashControl" /v LogEvent /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v DisablePagingExecutive /t REG_DWORD /d 1 /f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v LargeSystemCache /t REG_DWORD /d 0 /f >nul
+
+:: Network optimization
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters" /v DisabledComponents /t REG_DWORD /d 255 /f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" /v TcpTimedWaitDelay /t REG_DWORD /d 30 /f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" /v Size /t REG_DWORD /d 3 /f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" /v IRPStackSize /t REG_DWORD /d 20 /f >nul
+
+:: Disable Timeline/Activity History
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" /v EnableActivityFeed /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" /v PublishUserActivities /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" /v UploadUserActivities /t REG_DWORD /d 0 /f >nul
+
+:: Disable Clipboard History
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" /v AllowClipboardHistory /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" /v AllowCrossDeviceClipboard /t REG_DWORD /d 0 /f >nul
+
+:: Disable Location tracking
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\LocationAndSensors" /v DisableLocation /t REG_DWORD /d 1 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\LocationAndSensors" /v DisableWindowsLocationProvider /t REG_DWORD /d 1 /f >nul
+
 :: Current User tweaks
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v HideFileExt /t REG_DWORD /d 0 /f >nul
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v Hidden /t REG_DWORD /d 1 /f >nul
@@ -291,16 +353,116 @@ reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" 
 reg add "HKCU\Software\Policies\Microsoft\Windows\Explorer" /v DisableSearchBoxSuggestions /t REG_DWORD /d 1 /f >nul
 
 echo   Registry tweaks applied.
-echo   Registry tweaks applied >> "%LOG_FILE%"
+echo   Registry tweaks applied >> "%LOG%"
+
+:: ============================================================
+:: PHASE 6: VISUAL PERFORMANCE (disable animations/effects)
+:: ============================================================
+echo.
+echo ============================================================
+echo  [6/11] Visual Performance Tweaks...
+echo ============================================================
+echo [6/11] Visual Performance Tweaks... >> "%LOG%"
+
+:: Set Visual Effects to Best Performance
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" /v VisualFXSetting /t REG_DWORD /d 2 /f >nul
+reg add "HKCU\Control Panel\Desktop" /v UserPreferencesMask /t REG_BINARY /d 9012038010000000 /f >nul
+:: Disable transparency
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v EnableTransparency /t REG_DWORD /d 0 /f >nul
+:: Disable animations
+reg add "HKCU\Control Panel\Desktop\WindowMetrics" /v MinAnimate /t REG_SZ /d 0 /f >nul
+reg add "HKCU\Control Panel\Desktop" /v MenuShowDelay /t REG_SZ /d 0 /f >nul
+:: Disable Aero Shake
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v DisallowShaking /t REG_DWORD /d 1 /f >nul
+:: Disable Aero Peek
+reg add "HKCU\Software\Microsoft\Windows\DWM" /v EnableAeroPeek /t REG_DWORD /d 0 /f >nul
+:: Disable window animation
+reg add "HKCU\Control Panel\Desktop" /v DragFullWindows /t REG_SZ /d 0 /f >nul
+:: Disable cursor blink
+reg add "HKCU\Control Panel\Desktop" /v CursorBlinkRate /t REG_SZ /d -1 /f >nul
+:: Dark mode
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v AppsUseLightTheme /t REG_DWORD /d 0 /f >nul
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v SystemUsesLightTheme /t REG_DWORD /d 0 /f >nul
+echo   Visual performance optimized.
+echo   Visual performance optimized >> "%LOG%"
+
+:: ============================================================
+:: PHASE 7: DISABLE SCHEDULED TASKS + TELEMETRY
+:: ============================================================
+echo.
+echo ============================================================
+echo  [7/11] Disabling Scheduled Tasks + Telemetry...
+echo ============================================================
+echo [7/11] Disabling Scheduled Tasks + Telemetry... >> "%LOG%"
+
+:: Disable telemetry/diagnostic tasks
+for %%T in (
+    "\Microsoft\Windows\Application Experience\Microsoft Compatibility Appraiser"
+    "\Microsoft\Windows\Application Experience\ProgramDataUpdater"
+    "\Microsoft\Windows\Autochk\Proxy"
+    "\Microsoft\Windows\Customer Experience Improvement Program\Consolidator"
+    "\Microsoft\Windows\Customer Experience Improvement Program\UsbCeip"
+    "\Microsoft\Windows\DiskDiagnostic\Microsoft-Windows-DiskDiagnosticDataCollector"
+    "\Microsoft\Windows\Feedback\Siuf\DmClient"
+    "\Microsoft\Windows\Feedback\Siuf\DmClientOnScenarioDownload"
+    "\Microsoft\Windows\Maps\MapsToastTask"
+    "\Microsoft\Windows\Maps\MapsUpdateTask"
+    "\Microsoft\Windows\Power Efficiency Diagnostics\AnalyzeSystem"
+    "\Microsoft\Windows\Shell\FamilySafetyMonitor"
+    "\Microsoft\Windows\Shell\FamilySafetyRefreshTask"
+    "\Microsoft\Windows\Windows Error Reporting\QueueReporting"
+    "\Microsoft\Windows\CloudExperienceHost\CreateObjectTask"
+    "\Microsoft\Windows\Defrag\ScheduledDefrag"
+) do (
+    schtasks /Change /TN %%T /Disable >nul 2>&1
+)
+echo   - Scheduled tasks disabled
+
+:: Block telemetry via hosts file
+set "HOSTS=%SystemRoot%\System32\drivers\etc\hosts"
+findstr /i "vortex.data.microsoft.com" "%HOSTS%" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo. >> "%HOSTS%"
+    echo # --- Block Telemetry --- >> "%HOSTS%"
+    echo 0.0.0.0 vortex.data.microsoft.com >> "%HOSTS%"
+    echo 0.0.0.0 settings-win.data.microsoft.com >> "%HOSTS%"
+    echo 0.0.0.0 watson.telemetry.microsoft.com >> "%HOSTS%"
+    echo 0.0.0.0 watson.microsoft.com >> "%HOSTS%"
+    echo 0.0.0.0 dc.services.visualstudio.com >> "%HOSTS%"
+    echo 0.0.0.0 telemetry.microsoft.com >> "%HOSTS%"
+    echo 0.0.0.0 oca.telemetry.microsoft.com >> "%HOSTS%"
+    echo 0.0.0.0 sqm.telemetry.microsoft.com >> "%HOSTS%"
+    echo 0.0.0.0 feedback.windows.com >> "%HOSTS%"
+    echo 0.0.0.0 feedback.microsoft-hohm.com >> "%HOSTS%"
+)
+echo   - Telemetry hosts blocked
+
+:: Disable System Restore (saves disk space in VM)
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\SystemRestore" /v DisableSR /t REG_DWORD /d 1 /f >nul
+vssadmin delete shadows /all /quiet >nul 2>&1
+sc config swprv start= disabled >nul 2>&1
+echo   - System Restore disabled
+
+:: Clear event logs
+for /f "tokens=*" %%L in ('wevtutil el 2^>nul') do wevtutil cl "%%L" >nul 2>&1
+echo   - Event logs cleared
+
+:: Disable Notifications Center
+reg add "HKCU\Software\Policies\Microsoft\Windows\Explorer" /v DisableNotificationCenter /t REG_DWORD /d 1 /f >nul
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\PushNotifications" /v ToastEnabled /t REG_DWORD /d 0 /f >nul
+echo   - Notifications disabled
+
+echo   Scheduled tasks + telemetry done.
+echo   Scheduled tasks + telemetry done >> "%LOG%"
 
 :: ============================================================
 :: PHASE 6: CLEANUP FILES
 :: ============================================================
 echo.
 echo ============================================================
-echo  [6/8] Cleaning Up Files...
+echo  [8/11] Cleaning Up Files...
 echo ============================================================
-echo [6/8] Cleaning Up Files... >> "%LOG_FILE%"
+echo [8/11] Cleaning Up Files... >> "%LOG%"
 
 :: Wallpapers
 if exist "%SystemRoot%\Web\Wallpaper" (
@@ -369,17 +531,83 @@ del /f /q /s "%SystemRoot%\Logs\*" >nul 2>&1
 del /f /q /s "%SystemRoot%\ServiceProfiles\LocalService\AppData\Local\FontCache\*" >nul 2>&1
 echo   - Cleaned temp/logs/caches
 
-echo   Files cleanup done.
-echo   Files cleanup done >> "%LOG_FILE%"
+:: Windows.old (leftover from upgrades)
+if exist "%SystemDrive%\Windows.old" (
+    takeown /f "%SystemDrive%\Windows.old" /r /d y >nul 2>&1
+    icacls "%SystemDrive%\Windows.old" /grant administrators:F /t >nul 2>&1
+    rmdir /s /q "%SystemDrive%\Windows.old" >nul 2>&1
+    echo   - Removed Windows.old
+)
+
+:: Windows Help files
+if exist "%SystemRoot%\Help" (
+    takeown /f "%SystemRoot%\Help" /r /d y >nul 2>&1
+    icacls "%SystemRoot%\Help" /grant administrators:F /t >nul 2>&1
+    rmdir /s /q "%SystemRoot%\Help" >nul 2>&1
+)
+echo   - Removed Help files
+
+:: Setup/Install logs
+if exist "%SystemRoot%\Panther" rmdir /s /q "%SystemRoot%\Panther" >nul 2>&1
+if exist "%SystemRoot%\inf\setupapi*" del /f /q "%SystemRoot%\inf\setupapi*" >nul 2>&1
+echo   - Removed setup logs
+
+:: Installer caches
+if exist "%SystemRoot%\Installer\$PatchCache$" (
+    rmdir /s /q "%SystemRoot%\Installer\$PatchCache$" >nul 2>&1
+)
+if exist "%ProgramData%\Package Cache" (
+    rmdir /s /q "%ProgramData%\Package Cache" >nul 2>&1
+)
+if exist "%SystemRoot%\Downloaded Program Files" (
+    rmdir /s /q "%SystemRoot%\Downloaded Program Files" >nul 2>&1
+)
+echo   - Cleaned installer caches
+
+:: Crash dumps
+if exist "%SystemRoot%\Minidump" rmdir /s /q "%SystemRoot%\Minidump" >nul 2>&1
+if exist "%SystemRoot%\LiveKernelReports" rmdir /s /q "%SystemRoot%\LiveKernelReports" >nul 2>&1
+if exist "%SystemRoot%\MEMORY.DMP" del /f /q "%SystemRoot%\MEMORY.DMP" >nul 2>&1
+if exist "%SystemRoot%\SystemTemp" del /f /q /s "%SystemRoot%\SystemTemp\*" >nul 2>&1
+echo   - Cleaned crash dumps
+
+:: Diagnostics/Troubleshooters
+if exist "%SystemRoot%\diagnostics" (
+    takeown /f "%SystemRoot%\diagnostics" /r /d y >nul 2>&1
+    icacls "%SystemRoot%\diagnostics" /grant administrators:F /t >nul 2>&1
+    rmdir /s /q "%SystemRoot%\diagnostics" >nul 2>&1
+)
+echo   - Removed diagnostics
+
+:: .NET Native Image Cache (will regenerate if needed)
+if exist "%SystemRoot%\assembly\NativeImages_v4*" (
+    for /d %%N in ("%SystemRoot%\assembly\NativeImages_v4*") do rmdir /s /q "%%N" >nul 2>&1
+)
+echo   - Cleaned .NET cache
+
+:: Rescache
+if exist "%SystemRoot%\rescache" rmdir /s /q "%SystemRoot%\rescache" >nul 2>&1
+echo   - Cleaned rescache
+
+:: Old driver packages (clean unused)
+pnputil /enum-drivers >nul 2>&1 && (
+    for /f "tokens=1,2 delims=: " %%a in ('pnputil /enum-drivers ^| findstr /i "oem"') do (
+        pnputil /delete-driver %%b >nul 2>&1
+    )
+)
+echo   - Cleaned old driver packages
+
+echo   Deep cleanup done.
+echo   Deep cleanup done >> "%LOG%"
 
 :: ============================================================
 :: PHASE 7: SYSTEM OPTIMIZATION
 :: ============================================================
 echo.
 echo ============================================================
-echo  [7/8] System Optimization...
+echo  [9/11] System Optimization...
 echo ============================================================
-echo [7/8] System Optimization... >> "%LOG_FILE%"
+echo [9/11] System Optimization... >> "%LOG%"
 
 :: High Performance power plan
 powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
@@ -409,31 +637,54 @@ dism /Online /Cleanup-Image /StartComponentCleanup /ResetBase >nul 2>&1
 echo   - WinSxS cleaned
 
 echo   System optimization done.
-echo   System optimization done >> "%LOG_FILE%"
+echo   System optimization done >> "%LOG%"
 
 :: ============================================================
-:: PHASE 8: CLEANUP SELF
+:: PHASE 8: ENABLE REMOTE DESKTOP
 :: ============================================================
 echo.
 echo ============================================================
-echo  [8/8] Final Cleanup...
+echo  [10/11] Enabling Remote Desktop...
 echo ============================================================
-echo [8/8] Final Cleanup... >> "%LOG_FILE%"
+echo [10/11] Enabling Remote Desktop... >> "%LOG%"
+
+:: Enable RDP
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server" /v fDenyTSConnections /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v UserAuthentication /t REG_DWORD /d 0 /f >nul
+
+:: Enable RDP firewall rules
+netsh advfirewall firewall set rule group="Remote Desktop" new enable=yes >nul 2>&1
+
+:: Start RDP service
+sc config TermService start= auto >nul 2>&1
+sc start TermService >nul 2>&1
+
+echo   Remote Desktop enabled.
+echo   Connect via: mstsc /v:%COMPUTERNAME%
+echo   Remote Desktop enabled >> "%LOG%"
+
+:: ============================================================
+:: PHASE 9: FINAL CLEANUP
+:: ============================================================
+echo.
+echo ============================================================
+echo  [11/11] Final Cleanup...
+echo ============================================================
+echo [11/11] Final Cleanup... >> "%LOG%"
 
 :: Clean temp files
 del /f /q "%SystemRoot%\Temp\*" >nul 2>&1
 del /f /q "%TEMP%\*" >nul 2>&1
 
-echo.
-echo ============================================================ >> "%LOG_FILE%"
-echo  QuickOptimize - Completed: %DATE% %TIME% >> "%LOG_FILE%"
-echo ============================================================ >> "%LOG_FILE%"
+echo ============================================================ >> "%LOG%"
+echo  QuickOptimize - Completed: %DATE% %TIME% >> "%LOG%"
+echo ============================================================ >> "%LOG%"
 
 echo.
 echo  =============================================
 echo   QuickOptimize COMPLETE!
 echo  =============================================
-echo   Log: %LOG_FILE%
+echo   Log: %LOG%
 echo  =============================================
 echo.
 
