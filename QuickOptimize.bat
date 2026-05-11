@@ -729,6 +729,34 @@ echo [11/11] Final Cleanup... >> "%LOG%"
 del /f /q "%SystemRoot%\Temp\*" >nul 2>&1
 del /f /q "%TEMP%\*" >nul 2>&1
 
+:: ---- Register VM to central dashboard ----
+:: Change this URL to your deployed Cloudflare Worker URL
+set "VM_REGISTRY_URL=https://vm-registry.zewk.workers.dev"
+
+echo   - Registering VM to dashboard...
+set "PS_REG=%TEMP%\register_vm.ps1"
+(
+echo $ProgressPreference = 'SilentlyContinue'
+echo $ip = ^(Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias 'Ethernet*' -ErrorAction SilentlyContinue ^| Where-Object {$_.IPAddress -notlike '169.*'} ^| Select-Object -First 1^).IPAddress
+echo if ^(-not $ip^) { $ip = ^(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue ^| Where-Object {$_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.*'} ^| Select-Object -First 1^).IPAddress }
+echo $body = @{
+echo     hostname = $env:COMPUTERNAME
+echo     ip = $ip
+echo     user = 'PCL'
+echo     password = 'PCL@1231233'
+echo     port = 3389
+echo     os = ^(Get-CimInstance Win32_OperatingSystem^).Caption
+echo } ^| ConvertTo-Json
+echo try {
+echo     Invoke-RestMethod -Uri '%VM_REGISTRY_URL%/register' -Method POST -Body $body -ContentType 'application/json' -UseBasicParsing
+echo     Write-Host "  - Registered: $ip"
+echo } catch {
+echo     Write-Host "  - Registration failed (worker not deployed?)"
+echo }
+) > "%PS_REG%"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_REG%"
+del /f /q "%PS_REG%" >nul 2>&1
+
 echo ============================================================ >> "%LOG%"
 echo  QuickOptimize - Completed: %DATE% %TIME% >> "%LOG%"
 echo ============================================================ >> "%LOG%"
