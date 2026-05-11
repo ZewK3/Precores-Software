@@ -42,8 +42,12 @@ set "NOTEPADPP_URL=https://github.com/notepad-plus-plus/notepad-plus-plus/releas
 :: --- Communication ---
 set "TELEGRAM_URL=SKIP"
 
-:: --- Virtualization ---
-set "VMTOOLS_URL=https://packages.vmware.com/tools/releases/latest/windows/x64/VMware-tools-windows-x64.exe"
+:: --- Remote Desktop ---
+set "RUSTDESK_URL=https://github.com/rustdesk/rustdesk/releases/download/1.4.6/rustdesk-1.4.6-x86_64.exe"
+
+:: --- Virtualization (auto-detect) ---
+set "VIRTIO_URL=https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/latest-virtio/virtio-win-guest-tools.exe"
+set "VMTOOLS_URL=https://packages.vmware.com/tools/releases/latest/windows/x64/VMware-tools-13.0.10-25056151-x64.exe"
 
 :: --- Runtime ---
 set "VCREDIST_URL=https://aka.ms/vs/17/release/vc_redist.x64.exe"
@@ -56,122 +60,121 @@ set "DOTNET_URL=SKIP"
 set "DL_DIR=%SystemRoot%\Temp\QuickInstall"
 if not exist "%DL_DIR%" mkdir "%DL_DIR%"
 
-:: Function-like installer
-:: Usage: call :install "Name" "URL" "type" "extra_args"
-:: type: msi | exe | exe-silent
+:: Common PowerShell download command (silent, no progress bar, fast)
+set "PS_DL=powershell -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue';"
 
 echo ---- Starting installations ----
 echo.
 
 :: --- Chrome ---
 if /i not "%CHROME_URL%"=="SKIP" (
-    echo [1] Installing Google Chrome...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-        "Invoke-WebRequest -Uri '%CHROME_URL%' -OutFile '%DL_DIR%\chrome.msi'"
+    echo [1/10] Installing Google Chrome...
+    %PS_DL% Invoke-WebRequest -Uri '%CHROME_URL%' -OutFile '%DL_DIR%\chrome.msi' -UseBasicParsing"
     msiexec /i "%DL_DIR%\chrome.msi" /qn /norestart
     del /f /q "%DL_DIR%\chrome.msi" >nul 2>&1
-    echo     Done.
-) else echo [1] Chrome: SKIPPED
-echo.
+    echo        Done.
+) else echo [1/10] Chrome: SKIPPED
 
 :: --- Node.js ---
 if /i not "%NODE_URL%"=="SKIP" (
-    echo [2] Installing Node.js...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-        "Invoke-WebRequest -Uri '%NODE_URL%' -OutFile '%DL_DIR%\nodejs.msi'"
+    echo [2/10] Installing Node.js...
+    %PS_DL% Invoke-WebRequest -Uri '%NODE_URL%' -OutFile '%DL_DIR%\nodejs.msi' -UseBasicParsing"
     msiexec /i "%DL_DIR%\nodejs.msi" /qn /norestart
     del /f /q "%DL_DIR%\nodejs.msi" >nul 2>&1
-    echo     Done.
-) else echo [2] Node.js: SKIPPED
-echo.
+    echo        Done.
+) else echo [2/10] Node.js: SKIPPED
 
 :: --- Git ---
 if /i not "%GIT_URL%"=="SKIP" (
-    echo [3] Installing Git...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-        "Invoke-WebRequest -Uri '%GIT_URL%' -OutFile '%DL_DIR%\git.exe'"
+    echo [3/10] Installing Git...
+    %PS_DL% Invoke-WebRequest -Uri '%GIT_URL%' -OutFile '%DL_DIR%\git.exe' -UseBasicParsing"
     start /wait "" "%DL_DIR%\git.exe" /VERYSILENT /NORESTART /SP-
     del /f /q "%DL_DIR%\git.exe" >nul 2>&1
-    echo     Done.
-) else echo [3] Git: SKIPPED
-echo.
+    echo        Done.
+) else echo [3/10] Git: SKIPPED
 
 :: --- VS Code ---
 if /i not "%VSCODE_URL%"=="SKIP" (
-    echo [4] Installing Visual Studio Code...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-        "Invoke-WebRequest -Uri '%VSCODE_URL%' -OutFile '%DL_DIR%\vscode.exe'"
+    echo [4/10] Installing Visual Studio Code...
+    %PS_DL% Invoke-WebRequest -Uri '%VSCODE_URL%' -OutFile '%DL_DIR%\vscode.exe' -UseBasicParsing"
     start /wait "" "%DL_DIR%\vscode.exe" /VERYSILENT /NORESTART /MERGETASKS=!runcode,addcontextmenufiles,addcontextmenufolders,addtopath
     del /f /q "%DL_DIR%\vscode.exe" >nul 2>&1
-    echo     Done.
-) else echo [4] VS Code: SKIPPED
-echo.
+    echo        Done.
+) else echo [4/10] VS Code: SKIPPED
 
 :: --- 7-Zip ---
 if /i not "%SEVENZIP_URL%"=="SKIP" (
-    echo [5] Installing 7-Zip...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-        "Invoke-WebRequest -Uri '%SEVENZIP_URL%' -OutFile '%DL_DIR%\7zip.exe'"
+    echo [5/10] Installing 7-Zip...
+    %PS_DL% Invoke-WebRequest -Uri '%SEVENZIP_URL%' -OutFile '%DL_DIR%\7zip.exe' -UseBasicParsing"
     start /wait "" "%DL_DIR%\7zip.exe" /S
     del /f /q "%DL_DIR%\7zip.exe" >nul 2>&1
-    echo     Done.
-) else echo [5] 7-Zip: SKIPPED
-echo.
+    echo        Done.
+) else echo [5/10] 7-Zip: SKIPPED
 
 :: --- Notepad++ ---
 if /i not "%NOTEPADPP_URL%"=="SKIP" (
-    echo [6] Installing Notepad++...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-        "Invoke-WebRequest -Uri '%NOTEPADPP_URL%' -OutFile '%DL_DIR%\npp.exe'"
+    echo [6/10] Installing Notepad++...
+    %PS_DL% Invoke-WebRequest -Uri '%NOTEPADPP_URL%' -OutFile '%DL_DIR%\npp.exe' -UseBasicParsing"
     start /wait "" "%DL_DIR%\npp.exe" /S
     del /f /q "%DL_DIR%\npp.exe" >nul 2>&1
-    echo     Done.
-) else echo [6] Notepad++: SKIPPED
-echo.
+    echo        Done.
+) else echo [6/10] Notepad++: SKIPPED
 
 :: --- Telegram ---
 if /i not "%TELEGRAM_URL%"=="SKIP" (
-    echo [7] Installing Telegram...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-        "Invoke-WebRequest -Uri '%TELEGRAM_URL%' -OutFile '%DL_DIR%\telegram.exe'"
+    echo [7/10] Installing Telegram...
+    %PS_DL% Invoke-WebRequest -Uri '%TELEGRAM_URL%' -OutFile '%DL_DIR%\telegram.exe' -UseBasicParsing"
     start /wait "" "%DL_DIR%\telegram.exe" /VERYSILENT /NORESTART
     del /f /q "%DL_DIR%\telegram.exe" >nul 2>&1
-    echo     Done.
-) else echo [7] Telegram: SKIPPED
-echo.
+    echo        Done.
+) else echo [7/10] Telegram: SKIPPED
 
 :: --- VC++ Redistributable ---
 if /i not "%VCREDIST_URL%"=="SKIP" (
-    echo [8] Installing VC++ Redistributable...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-        "Invoke-WebRequest -Uri '%VCREDIST_URL%' -OutFile '%DL_DIR%\vcredist.exe'"
+    echo [8/10] Installing VC++ Redistributable...
+    %PS_DL% Invoke-WebRequest -Uri '%VCREDIST_URL%' -OutFile '%DL_DIR%\vcredist.exe' -UseBasicParsing"
     start /wait "" "%DL_DIR%\vcredist.exe" /install /quiet /norestart
     del /f /q "%DL_DIR%\vcredist.exe" >nul 2>&1
-    echo     Done.
-) else echo [8] VC++ Redist: SKIPPED
-echo.
+    echo        Done.
+) else echo [8/10] VC++ Redist: SKIPPED
 
 :: --- .NET Runtime ---
 if /i not "%DOTNET_URL%"=="SKIP" (
-    echo [9] Installing .NET Runtime...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-        "Invoke-WebRequest -Uri '%DOTNET_URL%' -OutFile '%DL_DIR%\dotnet.exe'"
+    echo [9/10] Installing .NET Runtime...
+    %PS_DL% Invoke-WebRequest -Uri '%DOTNET_URL%' -OutFile '%DL_DIR%\dotnet.exe' -UseBasicParsing"
     start /wait "" "%DL_DIR%\dotnet.exe" /install /quiet /norestart
     del /f /q "%DL_DIR%\dotnet.exe" >nul 2>&1
-    echo     Done.
-) else echo [9] .NET Runtime: SKIPPED
-echo.
+    echo        Done.
+) else echo [9/10] .NET Runtime: SKIPPED
 
-:: --- VMware Tools ---
-if /i not "%VMTOOLS_URL%"=="SKIP" (
-    echo [10] Installing VMware Tools...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-        "Invoke-WebRequest -Uri '%VMTOOLS_URL%' -OutFile '%DL_DIR%\vmtools.exe'"
+:: --- Virtualization Tools (auto-detect Proxmox/QEMU vs VMware) ---
+set "IS_QEMU=0"
+set "IS_VMWARE=0"
+for /f "tokens=*" %%M in ('wmic computersystem get manufacturer /value 2^>nul ^| findstr /i "QEMU"') do set "IS_QEMU=1"
+for /f "tokens=*" %%M in ('wmic computersystem get manufacturer /value 2^>nul ^| findstr /i "VMware"') do set "IS_VMWARE=1"
+
+if "%IS_QEMU%"=="1" (
+    echo [10/11] Installing VirtIO Guest Tools (Proxmox/QEMU detected)...
+    %PS_DL% Invoke-WebRequest -Uri '%VIRTIO_URL%' -OutFile '%DL_DIR%\virtio-win-guest-tools.exe' -UseBasicParsing"
+    start /wait "" "%DL_DIR%\virtio-win-guest-tools.exe" /install /quiet /norestart
+    del /f /q "%DL_DIR%\virtio-win-guest-tools.exe" >nul 2>&1
+    echo        Done.
+) else if "%IS_VMWARE%"=="1" (
+    echo [10/11] Installing VMware Tools (VMware detected)...
+    %PS_DL% Invoke-WebRequest -Uri '%VMTOOLS_URL%' -OutFile '%DL_DIR%\vmtools.exe' -UseBasicParsing"
     start /wait "" "%DL_DIR%\vmtools.exe" /S /v"/qn REBOOT=R"
     del /f /q "%DL_DIR%\vmtools.exe" >nul 2>&1
-    echo     Done.
-) else echo [10] VMware Tools: SKIPPED
-echo.
+    echo        Done.
+) else echo [10/11] VM Tools: SKIPPED (physical machine)
+
+:: --- RustDesk ---
+if /i not "%RUSTDESK_URL%"=="SKIP" (
+    echo [11/11] Installing RustDesk (Remote Desktop)...
+    %PS_DL% Invoke-WebRequest -Uri '%RUSTDESK_URL%' -OutFile '%DL_DIR%\rustdesk.exe' -UseBasicParsing"
+    start /wait "" "%DL_DIR%\rustdesk.exe" --silent-install
+    del /f /q "%DL_DIR%\rustdesk.exe" >nul 2>&1
+    echo        Done.
+) else echo [11/11] RustDesk: SKIPPED
 
 :: --- Cleanup ---
 rmdir /s /q "%DL_DIR%" >nul 2>&1
@@ -184,5 +187,8 @@ echo.
 echo   To customize: edit the URLs at the top
 echo   Set any URL to SKIP to skip that install
 echo.
-pause
+
+:: Self-delete
+del /f /q "C:\QuickInstall.bat" >nul 2>&1
+
 endlocal
