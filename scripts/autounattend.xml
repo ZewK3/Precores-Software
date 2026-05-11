@@ -101,7 +101,7 @@
                language="neutral" versionScope="nonSxS"
                xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
                xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-      <ComputerName>PCL-PC</ComputerName>
+      <ComputerName>*</ComputerName>
       <TimeZone>SE Asia Standard Time</TimeZone>
       <RegisteredOwner>PCL</RegisteredOwner>
       <RegisteredOrganization>PCL</RegisteredOrganization>

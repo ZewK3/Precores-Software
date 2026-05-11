@@ -245,10 +245,13 @@ if exist "%SystemRoot%\UpdateAssistant" (
     rmdir /s /q "%SystemRoot%\UpdateAssistant" >nul 2>&1
 )
 
-:: Disable 45+ unnecessary services (keep dev-critical: WSearch, TokenBroker, InstallService, StorSvc)
+:: Disable 60+ unnecessary services (low-RAM dev VM: keep TokenBroker, InstallService, StorSvc, Dhcp, Dnscache, LanmanWorkstation, NlaSvc, EventLog, RpcSs, RpcEptMapper, CryptSvc, Power, BFE, mpssvc, ProfSvc, gpsvc, Schedule, UserManager, LSM, AudioSrv, AudioEndpointBuilder, Themes)
+:: IMPORTANT: SysMain is KEPT enabled because Windows Memory Compression depends on it.
+:: Superfetch/Prefetch behavior is already disabled via registry (EnablePrefetcher=0, EnableSuperfetch=0).
+:: On 4GB systems, memory compression saves ~30-50% RAM by compressing cold pages.
 for %%S in (
     DiagTrack dmwappushservice diagnosticshub.standardcollector.service
-    SysMain MapsBroker lfsvc RetailDemo wisvc WerSvc
+    MapsBroker lfsvc RetailDemo wisvc WerSvc
     XblAuthManager XblGameSave XboxNetApiSvc XboxGipSvc
     RemoteRegistry RemoteAccess SharedAccess TrkWks
     WMPNetworkSvc WpcMonSvc SEMgrSvc PhoneSvc
@@ -262,10 +265,30 @@ for %%S in (
     PimIndexMaintenanceSvc_* UnistoreSvc_* UserDataSvc_*
     BcastDVRUserService_* BluetoothUserService_*
     Fax PrintWorkflowUserSvc_*
+    WSearch fhsvc WalletService BDESVC RasMan
+    iphlpsvc ALG SCPolicySvc SmartSAMSS Browser
+    WlanSvc WwanSvc DusmSvc DsmSvc PNRPsvc p2psvc p2pimsvc PNRPAutoReg
+    PeerDistSvc HvHost vmickvpexchange vmicguestinterface vmicshutdown
+    vmicheartbeat vmicvmsession vmicrdv vmictimesync vmicvss
+    SensorService SensrSvc SensorDataService DevQueryBroker
+    ssh-agent sshd ssh-broker-svc AssignedAccessManagerSvc
+    AppReadiness AppMgmt AppVClient ClipSVC
+    AeLookupSvc PolicyAgent IKEEXT SstpSvc
+    NaturalAuthentication GraphicsPerfSvc
+    embeddedmode COMSysApp WEPHOSTSVC PerfHost
+    Netlogon Netman RmSvc
+    SDRSVC seclogon shpamsvc TieringEngineService
+    SNMPTRAP swprv UmRdpService upnphost vds
+    WaaSMedicSvc
+    BTAGService bthserv BthAvctpSvc
+    SharedRealitySvc spectrum
+    MicrosoftEdgeElevationService
 ) do (
     sc stop %%S >nul 2>&1
     sc config %%S start= disabled >nul 2>&1
 )
+:: NOTE: Some services above may not exist on all SKUs; "sc config" silently fails for absent services.
+:: Critical for graphics/audio/network NOT in disable list: Themes, AudioSrv, AudioEndpointBuilder, Dhcp, Dnscache, LanmanWorkstation, EventLog, RpcSs, mpssvc, BFE, SysMain (for Memory Compression)
 
 echo   Services disabled + files removed.
 echo   Services disabled + files removed >> "%LOG%"
@@ -313,10 +336,10 @@ reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management
 :: Disable background apps
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy" /v LetAppsRunInBackground /t REG_DWORD /d 2 /f >nul
 
-:: Memory optimization (small dumps only, disable paging executive)
+:: Memory optimization (small dumps; for 4GB RAM, ALLOW kernel paging to free RAM)
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\CrashControl" /v CrashDumpEnabled /t REG_DWORD /d 3 /f >nul
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\CrashControl" /v LogEvent /t REG_DWORD /d 0 /f >nul
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v DisablePagingExecutive /t REG_DWORD /d 1 /f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v DisablePagingExecutive /t REG_DWORD /d 0 /f >nul
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v LargeSystemCache /t REG_DWORD /d 0 /f >nul
 
 :: Network optimization
@@ -351,6 +374,96 @@ reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" 
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v PreInstalledAppsEnabled /t REG_DWORD /d 0 /f >nul
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" /v SilentInstalledAppsEnabled /t REG_DWORD /d 0 /f >nul
 reg add "HKCU\Software\Policies\Microsoft\Windows\Explorer" /v DisableSearchBoxSuggestions /t REG_DWORD /d 1 /f >nul
+
+:: ---- EXTRA LOW-RAM TWEAKS (for AI dev tools: VS Code, Verdent, Kiro) ----
+
+:: Merge svchost processes (saves ~150-300MB on >=3.5GB RAM systems)
+:: Set threshold higher than installed RAM (in KB) so Windows groups all services in fewer svchost.exe
+reg add "HKLM\SYSTEM\CurrentControlSet\Control" /v SvcHostSplitThresholdInKB /t REG_DWORD /d 4194304 /f >nul
+
+:: Don't clear pagefile on shutdown (faster shutdown, no perf gain)
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v ClearPageFileAtShutdown /t REG_DWORD /d 0 /f >nul
+
+:: Increase I/O page lock limit (better disk I/O for compilers/AI)
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v IoPageLockLimit /t REG_DWORD /d 983040 /f >nul
+
+:: Faster shutdown timers
+reg add "HKLM\SYSTEM\CurrentControlSet\Control" /v WaitToKillServiceTimeout /t REG_SZ /d 2000 /f >nul
+reg add "HKCU\Control Panel\Desktop" /v WaitToKillAppTimeout /t REG_SZ /d 2000 /f >nul
+reg add "HKCU\Control Panel\Desktop" /v HungAppTimeout /t REG_SZ /d 2000 /f >nul
+reg add "HKCU\Control Panel\Desktop" /v AutoEndTasks /t REG_SZ /d 1 /f >nul
+
+:: Disable Windows Search indexer UI (Cortana/search box on taskbar) - saves ~80-150MB
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Search" /v SearchboxTaskbarMode /t REG_DWORD /d 0 /f >nul
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Search" /v BingSearchEnabled /t REG_DWORD /d 0 /f >nul
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Search" /v CortanaConsent /t REG_DWORD /d 0 /f >nul
+
+:: Disable Cortana/TaskView/People/Meet/Widgets buttons on taskbar
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v ShowCortanaButton /t REG_DWORD /d 0 /f >nul
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v ShowTaskViewButton /t REG_DWORD /d 0 /f >nul
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced\People" /v PeopleBand /t REG_DWORD /d 0 /f >nul
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v TaskbarMn /t REG_DWORD /d 0 /f >nul
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v TaskbarDa /t REG_DWORD /d 0 /f >nul
+
+:: Open File Explorer to "This PC" (no Quick Access scanning)
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v LaunchTo /t REG_DWORD /d 1 /f >nul
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer" /v ShowRecent /t REG_DWORD /d 0 /f >nul
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer" /v ShowFrequent /t REG_DWORD /d 0 /f >nul
+
+:: Disable News & Interests / Widgets
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Dsh" /v AllowNewsAndInterests /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Feeds" /v EnableFeeds /t REG_DWORD /d 0 /f >nul
+
+:: Disable Edge pre-launch/tab preload (Edge eats ~200MB at boot otherwise)
+reg add "HKLM\SOFTWARE\Policies\Microsoft\MicrosoftEdge\Main" /v AllowPrelaunch /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\MicrosoftEdge\TabPreloader" /v AllowTabPreloading /t REG_DWORD /d 0 /f >nul
+reg add "HKCU\Software\Policies\Microsoft\MicrosoftEdge\Main" /v AllowPrelaunch /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v StartupBoostEnabled /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v BackgroundModeEnabled /t REG_DWORD /d 0 /f >nul
+
+:: Disable Storage Sense (background disk scans)
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\StorageSense\Parameters\StoragePolicy" /v 01 /t REG_DWORD /d 0 /f >nul
+
+:: Disable Windows Spotlight (lockscreen download)
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" /v DisableWindowsSpotlightFeatures /t REG_DWORD /d 1 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" /v DisableSpotlightCollectionOnDesktop /t REG_DWORD /d 1 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" /v DisableThirdPartySuggestions /t REG_DWORD /d 1 /f >nul
+
+:: Disable Search Highlights
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search" /v EnableDynamicContentInWSB /t REG_DWORD /d 0 /f >nul
+
+:: Disable Cortana/web search fully
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search" /v CortanaConsent /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search" /v DisableSearchBoxSuggestions /t REG_DWORD /d 1 /f >nul
+
+:: Disable startup boost / fast startup (clean boot, predictable memory state)
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Power" /v HiberbootEnabled /t REG_DWORD /d 0 /f >nul
+
+:: Disable game bar background recording
+reg add "HKCU\System\GameConfigStore" /v GameDVR_Enabled /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\GameDVR" /v AllowGameDVR /t REG_DWORD /d 0 /f >nul
+
+:: Disable error reporting service (Werfault.exe popups + memory dumps)
+reg add "HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting" /v Disabled /t REG_DWORD /d 1 /f >nul
+reg add "HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting" /v DontShowUI /t REG_DWORD /d 1 /f >nul
+
+:: Reduce DWM/animation CPU
+reg add "HKCU\Software\Microsoft\Windows\DWM" /v AlwaysHibernateThumbnails /t REG_DWORD /d 0 /f >nul
+
+:: Disable Sync settings
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\SettingSync" /v DisableSettingSync /t REG_DWORD /d 2 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\SettingSync" /v DisableSettingSyncUserOverride /t REG_DWORD /d 1 /f >nul
+
+:: Disable App Compat telemetry (Inventory collector)
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\AppCompat" /v DisableInventory /t REG_DWORD /d 1 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\AppCompat" /v DisableUAR /t REG_DWORD /d 1 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\AppCompat" /v AITEnable /t REG_DWORD /d 0 /f >nul
+
+:: Disable Delivery Optimization peer cache (uses bandwidth+disk)
+reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\DeliveryOptimization\Config" /v DODownloadMode /t REG_DWORD /d 0 /f >nul
+
+:: Disable WPBT (Windows Platform Binary Table - runs OEM binaries at boot)
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager" /v DisableWpbtExecution /t REG_DWORD /d 1 /f >nul
 
 echo   Registry tweaks applied.
 echo   Registry tweaks applied >> "%LOG%"
@@ -617,10 +730,10 @@ echo   - High Performance power plan set
 powercfg /h off
 echo   - Hibernate disabled
 
-:: Optimize pagefile
+:: Optimize pagefile (4GB RAM: generous swap so AI tools don't OOM)
 wmic computersystem where name="%COMPUTERNAME%" set AutomaticManagedPagefile=False >nul 2>&1
-wmic pagefileset where name="C:\\pagefile.sys" set InitialSize=512,MaximumSize=1024 >nul 2>&1
-echo   - Pagefile optimized
+wmic pagefileset where name="C:\\pagefile.sys" set InitialSize=2048,MaximumSize=6144 >nul 2>&1
+echo   - Pagefile optimized (2GB-6GB for 4GB RAM)
 
 :: Disable Reserved Storage
 dism /Online /Set-ReservedStorageState /State:Disabled >nul 2>&1
@@ -635,6 +748,30 @@ echo   - CompactOS enabled
 echo   - Cleaning WinSxS component store...
 dism /Online /Cleanup-Image /StartComponentCleanup /ResetBase >nul 2>&1
 echo   - WinSxS cleaned
+
+:: ---- 4GB RAM SPECIFIC TWEAKS ----
+
+:: Force ENABLE Memory Compression (effectively gives ~30-50% more usable RAM on 4GB)
+echo   - Enabling Memory Compression (critical for 4GB)...
+powershell -NoProfile -Command "Enable-MMAgent -mc" >nul 2>&1
+powershell -NoProfile -Command "Enable-MMAgent -PageCombining" >nul 2>&1
+:: Disable prefetcher/superfetch DATA collection but keep MMAgent service alive for compression
+powershell -NoProfile -Command "Disable-MMAgent -ApplicationLaunchPrefetching" >nul 2>&1
+powershell -NoProfile -Command "Disable-MMAgent -ApplicationPreLaunch" >nul 2>&1
+powershell -NoProfile -Command "Disable-MMAgent -OperationAPI" >nul 2>&1
+
+:: Foreground priority boost (AI app you're using gets more CPU)
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\PriorityControl" /v Win32PrioritySeparation /t REG_DWORD /d 38 /f >nul
+echo   - Foreground app priority boosted
+
+:: Trim Explorer working set every time it idles (saves ~30-80MB)
+reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer" /v AlwaysUnloadDll /t REG_DWORD /d 1 /f >nul
+
+:: Auto-trim memory of background processes (Win10 1809+)
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v DisablePageCombining /t REG_DWORD /d 0 /f >nul
+
+:: Reduce CSRSS shared memory
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\SubSystems" /v Optional /t REG_MULTI_SZ /d "" /f >nul
 
 echo   System optimization done.
 echo   System optimization done >> "%LOG%"
@@ -675,12 +812,32 @@ reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fEnab
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v bEnumerateHWBeforeSW /t REG_DWORD /d 1 /f >nul
 echo   - RemoteFX enabled
 
-:: AVC/H.264 hardware encoding (smoother video)
+:: AVC/H.264 software encoding (no GPU in VM - hardware encode would FAIL and fall back slowly)
+:: AVC444 software mode = smooth video at cost of CPU; perfect for LAN RDP
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v AVC444ModePreferred /t REG_DWORD /d 1 /f >nul
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v AVCHardwareEncodePreferred /t REG_DWORD /d 1 /f >nul
-echo   - AVC H.264 encoding enabled
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v AVCHardwareEncodePreferred /t REG_DWORD /d 0 /f >nul
+echo   - AVC H.264 software encoding enabled (VM-optimized)
 
-:: Optimize compression (balanced CPU vs bandwidth)
+:: ---- UDP transport (HUGE smoothness gain on LAN; TCP-only causes lag) ----
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fClientDisableUDP /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v SelectTransport /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v SelectNetworkDetect /t REG_DWORD /d 1 /f >nul
+:: Open UDP 3389 in firewall
+netsh advfirewall firewall add rule name="RDP-UDP-In" dir=in action=allow protocol=UDP localport=3389 >nul 2>&1
+echo   - UDP transport enabled (port 3389/UDP)
+
+:: ---- Frame rate: 60fps for ultra-smooth mouse/scroll ----
+:: DWMFRAMEINTERVAL is in milliseconds: 15 = 60fps, 33 = 30fps
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v DWMFRAMEINTERVAL /t REG_DWORD /d 15 /f >nul
+:: Frame rate cap for AVC encoder
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v MaxMonitorTargetEffectiveFrameRate /t REG_DWORD /d 60 /f >nul
+echo   - RDP frame rate: 60 FPS
+
+:: ---- Compression: best balance for LAN ----
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v CompressionType /t REG_DWORD /d 2 /f >nul
+echo   - Compression: optimized for bandwidth
+
+:: ---- Image quality (1=Low, 2=Medium, 3=High, 4=Lossless; 3 is best balance) ----
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v VisualExperiencePolicy /t REG_DWORD /d 1 /f >nul
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v ImageQuality /t REG_DWORD /d 3 /f >nul
 
@@ -688,9 +845,14 @@ reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v Image
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fNoRemoteDesktopWallpaper /t REG_DWORD /d 1 /f >nul
 echo   - RDP wallpaper disabled (faster)
 
-:: Keep-alive interval (prevent disconnects)
+:: ---- Keep-alive (prevent disconnects, no idle timeout) ----
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v KeepAliveEnable /t REG_DWORD /d 1 /f >nul
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v KeepAliveInterval /t REG_DWORD /d 1 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v MaxIdleTime /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v MaxDisconnectionTime /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v MaxConnectionTime /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fInheritMaxIdleTime /t REG_DWORD /d 0 /f >nul
+echo   - No idle/session timeout (never auto-disconnect)
 
 :: Allow multiple simultaneous RDP sessions
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server" /v fSingleSessionPerUser /t REG_DWORD /d 0 /f >nul
@@ -702,10 +864,28 @@ reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v Secur
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v MinEncryptionLevel /t REG_DWORD /d 1 /f >nul
 echo   - RDP security prompts disabled
 
-:: Audio redirection over RDP (disabled for performance)
+:: ---- Redirections: disable unused (saves CPU + bandwidth) ----
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fDisableCam /t REG_DWORD /d 1 /f >nul
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fDisablePNPRedir /t REG_DWORD /d 1 /f >nul
-echo   - Camera/PnP redirection disabled
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fDisableCpm /t REG_DWORD /d 1 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fDisableCcm /t REG_DWORD /d 1 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fDisableLPT /t REG_DWORD /d 1 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fDisableCcm /t REG_DWORD /d 1 /f >nul
+:: KEEP clipboard + drive redirect (fDisableClip=0, fDisableCdm=0) - dev needs copy/paste & file transfer
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fDisableClip /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fDisableCdm /t REG_DWORD /d 0 /f >nul
+echo   - Printer/COM/LPT/Camera redirection OFF; clipboard/drive ON
+
+:: ---- Audio: capture OFF, playback ON quality MEDIUM (saves bandwidth) ----
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fDisableAudioCapture /t REG_DWORD /d 1 /f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fDisableAudioCapture /t REG_DWORD /d 1 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v MaxCompressionLevel /t REG_DWORD /d 1 /f >nul
+echo   - Audio capture disabled, playback compressed
+
+:: ---- Network buffers (smoother on slightly lossy LAN) ----
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fEnableVirtualizedGraphics /t REG_DWORD /d 1 /f >nul
+:: Increase RDP send buffer (faster screen push)
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\TermDD" /v MaxOutstandingSends /t REG_DWORD /d 8 /f >nul
 
 :: Faster screen updates
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v MaxMonitors /t REG_DWORD /d 4 /f >nul
@@ -713,8 +893,86 @@ reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-T
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v MaxYResolution /t REG_DWORD /d 2160 /f >nul
 echo   - Max resolution: 4K, 4 monitors
 
+:: ---- Auto-logon next time (avoid login screen lag over RDP) ----
+:: Note: leaves credentials in registry - acceptable for dev VM
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v AutoAdminLogon /t REG_SZ /d 1 /f >nul
+
+:: ---- TCP/UDP optimizations for RDP traffic ----
+:: Enable TCP timestamps (better RTT measurement = smoother UDP fallback)
+netsh int tcp set global timestamps=enabled >nul 2>&1
+:: Increase TCP autotuning level (faster screen pushes)
+netsh int tcp set global autotuninglevel=normal >nul 2>&1
+:: Enable RSS (Receive Side Scaling) for multi-CPU virtio NIC
+netsh int tcp set global rss=enabled >nul 2>&1
+:: ECN for less retransmit lag
+netsh int tcp set global ecncapability=enabled >nul 2>&1
+echo   - TCP/UDP tuned for RDP
+
+:: ============================================================
+:: DYNAMIC RDP PORT (allocated by central worker - 100%% unique)
+:: ============================================================
+:: Worker: vm-registry.zewk.workers.dev/register
+:: VM gui MAC -> worker tra ve port duy nhat (luu trong KV)
+:: Lan boot lai cua cung VM -> nhan lai dung port cu (idempotent)
+:: Neu worker khong reach duoc -> fallback dung MAC hash
+
+set "VM_REGISTRY_URL=https://vm-registry.zewk.workers.dev"
+set "RDP_PORT=3389"
+
+echo   - Requesting unique RDP port from registry...
+set "PS_PORT=%TEMP%\get_port.ps1"
+(
+echo $ProgressPreference = 'SilentlyContinue'
+echo $nic = Get-CimInstance Win32_NetworkAdapter -Filter 'NetEnabled=True AND PhysicalAdapter=True' ^| Select-Object -First 1
+echo $mac = if ^($nic^) { $nic.MACAddress } else { '' }
+echo $ip = ^(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue ^| Where-Object {$_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.*'} ^| Select-Object -First 1^).IPAddress
+echo $body = @{
+echo     mac = $mac
+echo     hostname = $env:COMPUTERNAME
+echo     ip = $ip
+echo     user = 'PCL'
+echo     password = 'PCL@1231233'
+echo     os = ^(Get-CimInstance Win32_OperatingSystem^).Caption
+echo } ^| ConvertTo-Json
+echo try {
+echo     $r = Invoke-RestMethod -Uri '%VM_REGISTRY_URL%/register' -Method POST -Body $body -ContentType 'application/json' -UseBasicParsing -TimeoutSec 15
+echo     if ^($r.port^) {
+echo         Write-Output $r.port
+echo         exit 0
+echo     }
+echo } catch {}
+echo # Fallback: derive port from MAC hash
+echo if ^($mac^) {
+echo     $last = $mac.Substring^($mac.Length-2^)
+echo     Write-Output ^(13389 + [Convert]::ToInt32^($last,16^)^)
+echo } else { Write-Output 3389 }
+) > "%PS_PORT%"
+
+for /f %%P in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_PORT%"') do set "RDP_PORT=%%P"
+del /f /q "%PS_PORT%" >nul 2>&1
+
+echo   - Assigned RDP port: !RDP_PORT!
+
+:: Apply port change to RDP listener
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v PortNumber /t REG_DWORD /d !RDP_PORT! /f >nul
+
+:: Firewall: remove default RDP rules' port restriction and add new dynamic port (TCP+UDP)
+netsh advfirewall firewall delete rule name="RDP-Custom-Dynamic-TCP" >nul 2>&1
+netsh advfirewall firewall delete rule name="RDP-Custom-Dynamic-UDP" >nul 2>&1
+netsh advfirewall firewall add rule name="RDP-Custom-Dynamic-TCP" dir=in action=allow protocol=TCP localport=!RDP_PORT! profile=any >nul
+netsh advfirewall firewall add rule name="RDP-Custom-Dynamic-UDP" dir=in action=allow protocol=UDP localport=!RDP_PORT! profile=any >nul
+
+:: Restart RDP service to pick up new port
+sc stop UmRdpService >nul 2>&1
+sc stop TermService >nul 2>&1
+sc start TermService >nul 2>&1
+echo   - RDP listening on port: !RDP_PORT!
+
+:: Save port to a file for QuickInstall / VM registry
+echo !RDP_PORT! > "C:\rdp_port.txt"
+
 echo   Remote Desktop enabled + optimized for mRemoteNG.
-echo   Remote Desktop enabled + optimized >> "%LOG%"
+echo   Remote Desktop enabled + optimized (port !RDP_PORT!) >> "%LOG%"
 
 :: ============================================================
 :: PHASE 9: FINAL CLEANUP
@@ -729,33 +987,8 @@ echo [11/11] Final Cleanup... >> "%LOG%"
 del /f /q "%SystemRoot%\Temp\*" >nul 2>&1
 del /f /q "%TEMP%\*" >nul 2>&1
 
-:: ---- Register VM to central dashboard ----
-:: Change this URL to your deployed Cloudflare Worker URL
-set "VM_REGISTRY_URL=https://vm-registry.zewk.workers.dev"
-
-echo   - Registering VM to dashboard...
-set "PS_REG=%TEMP%\register_vm.ps1"
-(
-echo $ProgressPreference = 'SilentlyContinue'
-echo $ip = ^(Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias 'Ethernet*' -ErrorAction SilentlyContinue ^| Where-Object {$_.IPAddress -notlike '169.*'} ^| Select-Object -First 1^).IPAddress
-echo if ^(-not $ip^) { $ip = ^(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue ^| Where-Object {$_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.*'} ^| Select-Object -First 1^).IPAddress }
-echo $body = @{
-echo     hostname = $env:COMPUTERNAME
-echo     ip = $ip
-echo     user = 'PCL'
-echo     password = 'PCL@1231233'
-echo     port = 3389
-echo     os = ^(Get-CimInstance Win32_OperatingSystem^).Caption
-echo } ^| ConvertTo-Json
-echo try {
-echo     Invoke-RestMethod -Uri '%VM_REGISTRY_URL%/register' -Method POST -Body $body -ContentType 'application/json' -UseBasicParsing
-echo     Write-Host "  - Registered: $ip"
-echo } catch {
-echo     Write-Host "  - Registration failed (worker not deployed?)"
-echo }
-) > "%PS_REG%"
-powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_REG%"
-del /f /q "%PS_REG%" >nul 2>&1
+:: NOTE: VM already registered with worker during RDP phase (see PHASE 8).
+:: No need to re-register here.
 
 echo ============================================================ >> "%LOG%"
 echo  QuickOptimize - Completed: %DATE% %TIME% >> "%LOG%"

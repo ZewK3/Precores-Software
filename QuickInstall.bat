@@ -42,6 +42,9 @@ set "NOTEPADPP_URL=https://github.com/notepad-plus-plus/notepad-plus-plus/releas
 :: --- Communication ---
 set "TELEGRAM_URL=SKIP"
 
+:: --- Vietnamese Input ---
+set "UNIKEY_URL=https://www.unikey.org/assets/release/unikey46RC2-230919-win64.zip"
+
 :: --- Remote Desktop ---
 set "RUSTDESK_URL=https://github.com/rustdesk/rustdesk/releases/download/1.4.6/rustdesk-1.4.6-x86_64.exe"
 
@@ -169,12 +172,40 @@ if "%IS_QEMU%"=="1" (
 
 :: --- RustDesk ---
 if /i not "%RUSTDESK_URL%"=="SKIP" (
-    echo [11/11] Installing RustDesk (Remote Desktop)...
+    echo [11/12] Installing RustDesk (Remote Desktop)...
     %PS_DL% Invoke-WebRequest -Uri '%RUSTDESK_URL%' -OutFile '%DL_DIR%\rustdesk.exe' -UseBasicParsing"
     start /wait "" "%DL_DIR%\rustdesk.exe" --silent-install
     del /f /q "%DL_DIR%\rustdesk.exe" >nul 2>&1
     echo        Done.
-) else echo [11/11] RustDesk: SKIPPED
+) else echo [11/12] RustDesk: SKIPPED
+
+:: --- UniKey (Vietnamese input method) ---
+if /i not "%UNIKEY_URL%"=="SKIP" (
+    echo [12/12] Installing UniKey...
+    set "UNIKEY_DIR=%ProgramFiles%\UniKey"
+    %PS_DL% Invoke-WebRequest -Uri '%UNIKEY_URL%' -OutFile '%DL_DIR%\unikey.zip' -UseBasicParsing"
+    if exist "%DL_DIR%\unikey.zip" (
+        if not exist "%ProgramFiles%\UniKey" mkdir "%ProgramFiles%\UniKey" >nul 2>&1
+        powershell -NoProfile -Command "Expand-Archive -Path '%DL_DIR%\unikey.zip' -DestinationPath '%ProgramFiles%\UniKey' -Force"
+        del /f /q "%DL_DIR%\unikey.zip" >nul 2>&1
+
+        :: Locate UniKeyNT.exe (zip may contain a subfolder)
+        set "UNIKEY_EXE="
+        for /r "%ProgramFiles%\UniKey" %%F in (UniKeyNT.exe) do if not defined UNIKEY_EXE set "UNIKEY_EXE=%%F"
+
+        if defined UNIKEY_EXE (
+            :: Desktop shortcut (all users)
+            powershell -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut('%PUBLIC%\Desktop\UniKey.lnk');$s.TargetPath='!UNIKEY_EXE!';$s.WorkingDirectory=(Split-Path '!UNIKEY_EXE!');$s.Save()"
+            :: Auto-run on every user login (all-users Startup)
+            powershell -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('CommonStartup')+'\UniKey.lnk');$s.TargetPath='!UNIKEY_EXE!';$s.WorkingDirectory=(Split-Path '!UNIKEY_EXE!');$s.Save()"
+            :: Launch immediately
+            start "" "!UNIKEY_EXE!"
+            echo        Done. UniKey installed to "%ProgramFiles%\UniKey".
+        ) else (
+            echo        WARNING: UniKeyNT.exe not found after extract.
+        )
+    ) else echo        ERROR: Download failed.
+) else echo [12/12] UniKey: SKIPPED
 
 :: --- Cleanup ---
 rmdir /s /q "%DL_DIR%" >nul 2>&1
