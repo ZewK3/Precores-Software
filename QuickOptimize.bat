@@ -465,6 +465,15 @@ reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\DeliveryOptimization\Con
 :: Disable WPBT (Windows Platform Binary Table - runs OEM binaries at boot)
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager" /v DisableWpbtExecution /t REG_DWORD /d 1 /f >nul
 
+:: Disable UAC (User Account Control) - crucial for automated VMs (no prompts)
+reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v EnableLUA /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v ConsentPromptBehaviorAdmin /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v PromptOnSecureDesktop /t REG_DWORD /d 0 /f >nul
+
+:: Disable all background UWP apps globally
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications" /v GlobalUserDisabled /t REG_DWORD /d 1 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy" /v LetAppsRunInBackground /t REG_DWORD /d 2 /f >nul
+
 echo   Registry tweaks applied.
 echo   Registry tweaks applied >> "%LOG%"
 
@@ -773,6 +782,9 @@ reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management
 
 :: Reduce CSRSS shared memory
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\SubSystems" /v Optional /t REG_MULTI_SZ /d "" /f >nul
+
+:: Disable NTFS Last Access Time update (saves significant disk read/writes in VMs)
+fsutil behavior set disablelastaccess 1 >nul 2>&1
 
 echo   System optimization done.
 echo   System optimization done >> "%LOG%"

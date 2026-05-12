@@ -64,7 +64,7 @@ set "DL_DIR=%SystemRoot%\Temp\QuickInstall"
 if not exist "%DL_DIR%" mkdir "%DL_DIR%" >nul 2>&1
 
 :: Common PowerShell download command (TLS 1.2, silent, no progress bar, fast)
-set "PS_DL=powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue';"
+set "PS_DL=powershell -NoProfile -ExecutionPolicy Bypass -Command"
 
 echo ---- Starting installations ----
 echo.
@@ -78,7 +78,7 @@ if /i "%CHROME_URL%"=="SKIP" (
         echo [1/12] Chrome: already installed, skipping.
     ) else (
         echo [1/12] Installing Google Chrome...
-        %PS_DL% Invoke-WebRequest -Uri '%CHROME_URL%' -OutFile '%DL_DIR%\chrome.msi' -UseBasicParsing"
+        %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%CHROME_URL%' -OutFile '%DL_DIR%\chrome.msi' -UseBasicParsing"
         if exist "%DL_DIR%\chrome.msi" (
             msiexec /i "%DL_DIR%\chrome.msi" /qn /norestart
             del /f /q "%DL_DIR%\chrome.msi" >nul 2>&1
@@ -96,7 +96,7 @@ if /i "%NODE_URL%"=="SKIP" (
         echo [2/12] Node.js: already installed, skipping.
     ) else (
         echo [2/12] Installing Node.js...
-        %PS_DL% Invoke-WebRequest -Uri '%NODE_URL%' -OutFile '%DL_DIR%\nodejs.msi' -UseBasicParsing"
+        %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%NODE_URL%' -OutFile '%DL_DIR%\nodejs.msi' -UseBasicParsing"
         if exist "%DL_DIR%\nodejs.msi" (
             msiexec /i "%DL_DIR%\nodejs.msi" /qn /norestart
             del /f /q "%DL_DIR%\nodejs.msi" >nul 2>&1
@@ -114,7 +114,7 @@ if /i "%GIT_URL%"=="SKIP" (
         echo [3/12] Git: already installed, skipping.
     ) else (
         echo [3/12] Installing Git...
-        %PS_DL% Invoke-WebRequest -Uri '%GIT_URL%' -OutFile '%DL_DIR%\git.exe' -UseBasicParsing"
+        %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%GIT_URL%' -OutFile '%DL_DIR%\git.exe' -UseBasicParsing"
         if exist "%DL_DIR%\git.exe" (
             start /wait "" "%DL_DIR%\git.exe" /VERYSILENT /NORESTART /SP-
             del /f /q "%DL_DIR%\git.exe" >nul 2>&1
@@ -132,7 +132,7 @@ if /i "%VSCODE_URL%"=="SKIP" (
         echo [4/12] VS Code: already installed, skipping.
     ) else (
         echo [4/12] Installing Visual Studio Code...
-        %PS_DL% Invoke-WebRequest -Uri '%VSCODE_URL%' -OutFile '%DL_DIR%\vscode.exe' -UseBasicParsing"
+        %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%VSCODE_URL%' -OutFile '%DL_DIR%\vscode.exe' -UseBasicParsing"
         if exist "%DL_DIR%\vscode.exe" (
             start /wait "" "%DL_DIR%\vscode.exe" /VERYSILENT /NORESTART /MERGETASKS=!runcode,addcontextmenufiles,addcontextmenufolders,addtopath
             del /f /q "%DL_DIR%\vscode.exe" >nul 2>&1
@@ -150,7 +150,7 @@ if /i "%SEVENZIP_URL%"=="SKIP" (
         echo [5/12] 7-Zip: already installed, skipping.
     ) else (
         echo [5/12] Installing 7-Zip...
-        %PS_DL% Invoke-WebRequest -Uri '%SEVENZIP_URL%' -OutFile '%DL_DIR%\7zip.exe' -UseBasicParsing"
+        %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%SEVENZIP_URL%' -OutFile '%DL_DIR%\7zip.exe' -UseBasicParsing"
         if exist "%DL_DIR%\7zip.exe" (
             start /wait "" "%DL_DIR%\7zip.exe" /S
             del /f /q "%DL_DIR%\7zip.exe" >nul 2>&1
@@ -168,7 +168,7 @@ if /i "%NOTEPADPP_URL%"=="SKIP" (
         echo [6/12] Notepad++: already installed, skipping.
     ) else (
         echo [6/12] Installing Notepad++...
-        %PS_DL% Invoke-WebRequest -Uri '%NOTEPADPP_URL%' -OutFile '%DL_DIR%\npp.exe' -UseBasicParsing"
+        %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%NOTEPADPP_URL%' -OutFile '%DL_DIR%\npp.exe' -UseBasicParsing"
         if exist "%DL_DIR%\npp.exe" (
             start /wait "" "%DL_DIR%\npp.exe" /S
             del /f /q "%DL_DIR%\npp.exe" >nul 2>&1
@@ -186,7 +186,7 @@ if /i "%TELEGRAM_URL%"=="SKIP" (
         echo [7/12] Telegram: already installed, skipping.
     ) else (
         echo [7/12] Installing Telegram...
-        %PS_DL% Invoke-WebRequest -Uri '%TELEGRAM_URL%' -OutFile '%DL_DIR%\telegram.exe' -UseBasicParsing"
+        %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%TELEGRAM_URL%' -OutFile '%DL_DIR%\telegram.exe' -UseBasicParsing"
         if exist "%DL_DIR%\telegram.exe" (
             start /wait "" "%DL_DIR%\telegram.exe" /VERYSILENT /NORESTART
             del /f /q "%DL_DIR%\telegram.exe" >nul 2>&1
@@ -205,7 +205,7 @@ if /i "%VCREDIST_URL%"=="SKIP" (
         echo [8/12] VC++ Redist: already installed, skipping.
     ) else (
         echo [8/12] Installing VC++ Redistributable...
-        %PS_DL% Invoke-WebRequest -Uri '%VCREDIST_URL%' -OutFile '%DL_DIR%\vcredist.exe' -UseBasicParsing"
+        %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%VCREDIST_URL%' -OutFile '%DL_DIR%\vcredist.exe' -UseBasicParsing"
         if exist "%DL_DIR%\vcredist.exe" (
             start /wait "" "%DL_DIR%\vcredist.exe" /install /quiet /norestart
             del /f /q "%DL_DIR%\vcredist.exe" >nul 2>&1
@@ -219,7 +219,7 @@ if /i "%DOTNET_URL%"=="SKIP" (
     echo [9/12] .NET Runtime: SKIPPED
 ) else (
     echo [9/12] Installing .NET Runtime...
-    %PS_DL% Invoke-WebRequest -Uri '%DOTNET_URL%' -OutFile '%DL_DIR%\dotnet.exe' -UseBasicParsing"
+    %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%DOTNET_URL%' -OutFile '%DL_DIR%\dotnet.exe' -UseBasicParsing"
     if exist "%DL_DIR%\dotnet.exe" (
         start /wait "" "%DL_DIR%\dotnet.exe" /install /quiet /norestart
         del /f /q "%DL_DIR%\dotnet.exe" >nul 2>&1
@@ -237,8 +237,8 @@ if "%IS_QEMU%"=="1" (
     if exist "%ProgramFiles%\Virtio-Win\" (
         echo [10/12] VirtIO Guest Tools: already installed, skipping.
     ) else (
-        echo [10/12] Installing VirtIO Guest Tools (Proxmox/QEMU detected)...
-        %PS_DL% Invoke-WebRequest -Uri '%VIRTIO_URL%' -OutFile '%DL_DIR%\virtio-win-guest-tools.exe' -UseBasicParsing"
+        echo [10/12] Installing VirtIO Guest Tools ^(Proxmox/QEMU detected^)...
+        %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%VIRTIO_URL%' -OutFile '%DL_DIR%\virtio-win-guest-tools.exe' -UseBasicParsing"
         if exist "%DL_DIR%\virtio-win-guest-tools.exe" (
             start /wait "" "%DL_DIR%\virtio-win-guest-tools.exe" /install /quiet /norestart
             del /f /q "%DL_DIR%\virtio-win-guest-tools.exe" >nul 2>&1
@@ -249,15 +249,17 @@ if "%IS_QEMU%"=="1" (
     if exist "%ProgramFiles%\VMware\VMware Tools\vmtoolsd.exe" (
         echo [10/12] VMware Tools: already installed, skipping.
     ) else (
-        echo [10/12] Installing VMware Tools (VMware detected)...
-        %PS_DL% Invoke-WebRequest -Uri '%VMTOOLS_URL%' -OutFile '%DL_DIR%\vmtools.exe' -UseBasicParsing"
+        echo [10/12] Installing VMware Tools ^(VMware detected^)...
+        %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%VMTOOLS_URL%' -OutFile '%DL_DIR%\vmtools.exe' -UseBasicParsing"
         if exist "%DL_DIR%\vmtools.exe" (
             start /wait "" "%DL_DIR%\vmtools.exe" /S /v"/qn REBOOT=R"
             del /f /q "%DL_DIR%\vmtools.exe" >nul 2>&1
             echo        Done.
         ) else echo        ERROR: download failed.
     )
-) else echo [10/12] VM Tools: SKIPPED (physical machine)
+) else (
+    echo [10/12] VM Tools: SKIPPED ^(physical machine^)
+)
 
 :: --- RustDesk ---
 if /i "%RUSTDESK_URL%"=="SKIP" (
@@ -267,8 +269,8 @@ if /i "%RUSTDESK_URL%"=="SKIP" (
     if "!ALREADY!"=="1" (
         echo [11/12] RustDesk: already installed, skipping.
     ) else (
-        echo [11/12] Installing RustDesk (Remote Desktop)...
-        %PS_DL% Invoke-WebRequest -Uri '%RUSTDESK_URL%' -OutFile '%DL_DIR%\rustdesk.exe' -UseBasicParsing"
+        echo [11/12] Installing RustDesk ^(Remote Desktop^)...
+        %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%RUSTDESK_URL%' -OutFile '%DL_DIR%\rustdesk.exe' -UseBasicParsing"
         if exist "%DL_DIR%\rustdesk.exe" (
             start /wait "" "%DL_DIR%\rustdesk.exe" --silent-install
             del /f /q "%DL_DIR%\rustdesk.exe" >nul 2>&1
@@ -291,7 +293,7 @@ if /i "%UNIKEY_URL%"=="SKIP" (
     ) else (
         echo [12/12] Installing UniKey...
         if not exist "!UNIKEY_ROOT!" mkdir "!UNIKEY_ROOT!" >nul 2>&1
-        %PS_DL% Invoke-WebRequest -Uri '%UNIKEY_URL%' -OutFile '%DL_DIR%\unikey.zip' -UseBasicParsing -UserAgent 'Mozilla/5.0'"
+        %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%UNIKEY_URL%' -OutFile '%DL_DIR%\unikey.zip' -UseBasicParsing -UserAgent 'Mozilla/5.0'"
         if exist "%DL_DIR%\unikey.zip" (
             powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -LiteralPath '%DL_DIR%\unikey.zip' -DestinationPath '!UNIKEY_ROOT!' -Force" >nul 2>&1
             del /f /q "%DL_DIR%\unikey.zip" >nul 2>&1
