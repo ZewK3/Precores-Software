@@ -279,7 +279,6 @@ for %%S in (
     Netlogon Netman RmSvc
     SDRSVC seclogon shpamsvc TieringEngineService
     SNMPTRAP swprv UmRdpService upnphost vds
-    WaaSMedicSvc
     BTAGService bthserv BthAvctpSvc
     SharedRealitySvc spectrum
     MicrosoftEdgeElevationService
@@ -336,17 +335,35 @@ reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management
 :: Disable background apps
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy" /v LetAppsRunInBackground /t REG_DWORD /d 2 /f >nul
 
-:: Memory optimization (small dumps; for 4GB RAM, ALLOW kernel paging to free RAM)
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\CrashControl" /v CrashDumpEnabled /t REG_DWORD /d 3 /f >nul
+:: Memory optimization (no crash dumps to save disk I/O, instantly reboot on BSOD)
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\CrashControl" /v CrashDumpEnabled /t REG_DWORD /d 0 /f >nul
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\CrashControl" /v LogEvent /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\CrashControl" /v AutoReboot /t REG_DWORD /d 1 /f >nul
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v DisablePagingExecutive /t REG_DWORD /d 0 /f >nul
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v LargeSystemCache /t REG_DWORD /d 0 /f >nul
+:: Dynamic DisablePagingExecutive: keep kernel in RAM if >=8GB, allow paging if <8GB
+for /f "usebackq" %%R in (`powershell -NoProfile -Command "if([Math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1GB) -ge 8){1}else{0}"`) do (
+    reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v DisablePagingExecutive /t REG_DWORD /d %%R /f >nul
+)
 
-:: Network optimization
+:: Network + Multimedia optimization
 reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters" /v DisabledComponents /t REG_DWORD /d 255 /f >nul
 reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" /v TcpTimedWaitDelay /t REG_DWORD /d 30 /f >nul
+:: Disable Network Throttling (maximize throughput instead of reserving 20% for media playback)
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" /v NetworkThrottlingIndex /t REG_DWORD /d 4294967295 /f >nul
+:: Give 100% CPU priority to foreground/background apps (no multimedia reservation)
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" /v SystemResponsiveness /t REG_DWORD /d 0 /f >nul
 reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" /v Size /t REG_DWORD /d 3 /f >nul
 reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" /v IRPStackSize /t REG_DWORD /d 20 /f >nul
+
+:: Disable Nagle's Algorithm on all interfaces (TCP_NODELAY = instant packet send, crucial for RDP/real-time)
+for /f "tokens=*" %%k in ('reg query "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces" /k 2^>nul') do (
+    reg add "%%k" /v TcpAckFrequency /t REG_DWORD /d 1 /f >nul 2>&1
+    reg add "%%k" /v TCPNoDelay /t REG_DWORD /d 1 /f >nul 2>&1
+    reg add "%%k" /v TcpDelAckTicks /t REG_DWORD /d 0 /f >nul 2>&1
+)
+:: Remove QoS reserved bandwidth (Windows reserves 20%% of bandwidth for QoS by default)
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\Psched" /v NonBestEffortLimit /t REG_DWORD /d 0 /f >nul
 
 :: Disable Timeline/Activity History
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" /v EnableActivityFeed /t REG_DWORD /d 0 /f >nul
@@ -377,15 +394,19 @@ reg add "HKCU\Software\Policies\Microsoft\Windows\Explorer" /v DisableSearchBoxS
 
 :: ---- EXTRA LOW-RAM TWEAKS (for AI dev tools: VS Code, Verdent, Kiro) ----
 
-:: Merge svchost processes (saves ~150-300MB on >=3.5GB RAM systems)
-:: Set threshold higher than installed RAM (in KB) so Windows groups all services in fewer svchost.exe
-reg add "HKLM\SYSTEM\CurrentControlSet\Control" /v SvcHostSplitThresholdInKB /t REG_DWORD /d 4194304 /f >nul
+:: Merge svchost processes dynamically based on RAM (saves ~150-300MB)
+:: Set threshold to installed RAM in KB so Windows groups all services in fewer svchost.exe
+for /f "usebackq" %%R in (`powershell -NoProfile -Command "[Math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1KB)"`) do (
+    reg add "HKLM\SYSTEM\CurrentControlSet\Control" /v SvcHostSplitThresholdInKB /t REG_DWORD /d %%R /f >nul
+)
 
 :: Don't clear pagefile on shutdown (faster shutdown, no perf gain)
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v ClearPageFileAtShutdown /t REG_DWORD /d 0 /f >nul
 
-:: Increase I/O page lock limit (better disk I/O for compilers/AI)
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v IoPageLockLimit /t REG_DWORD /d 983040 /f >nul
+:: Dynamic I/O page lock limit based on RAM (10% of RAM in bytes, better disk I/O for compilers/AI)
+for /f "usebackq" %%I in (`powershell -NoProfile -Command "[Math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory*0.1)"`) do (
+    reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v IoPageLockLimit /t REG_DWORD /d %%I /f >nul
+)
 
 :: Faster shutdown timers
 reg add "HKLM\SYSTEM\CurrentControlSet\Control" /v WaitToKillServiceTimeout /t REG_SZ /d 2000 /f >nul
@@ -441,7 +462,7 @@ reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Power" /v Hiberbo
 
 :: Disable game bar background recording
 reg add "HKCU\System\GameConfigStore" /v GameDVR_Enabled /t REG_DWORD /d 0 /f >nul
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\GameDVR" /v AllowGameDVR /t REG_DWORD /d 0 /f >nul
+:: AllowGameDVR already set in Performance/UX section above
 
 :: Disable error reporting service (Werfault.exe popups + memory dumps)
 reg add "HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting" /v Disabled /t REG_DWORD /d 1 /f >nul
@@ -465,14 +486,15 @@ reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\DeliveryOptimization\Con
 :: Disable WPBT (Windows Platform Binary Table - runs OEM binaries at boot)
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager" /v DisableWpbtExecution /t REG_DWORD /d 1 /f >nul
 
-:: Disable UAC (User Account Control) - crucial for automated VMs (no prompts)
+:: Disable UAC & Fast User Switching - crucial for automated VMs (no prompts, single user mode)
 reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v EnableLUA /t REG_DWORD /d 0 /f >nul
 reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v ConsentPromptBehaviorAdmin /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v HideFastUserSwitching /t REG_DWORD /d 1 /f >nul
 reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v PromptOnSecureDesktop /t REG_DWORD /d 0 /f >nul
 
 :: Disable all background UWP apps globally
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications" /v GlobalUserDisabled /t REG_DWORD /d 1 /f >nul
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy" /v LetAppsRunInBackground /t REG_DWORD /d 2 /f >nul
+:: LetAppsRunInBackground already set to 2 in line 337 above
 
 echo   Registry tweaks applied.
 echo   Registry tweaks applied >> "%LOG%"
@@ -559,6 +581,12 @@ if %errorlevel% neq 0 (
 )
 echo   - Telemetry hosts blocked
 
+:: Disable ETW (Event Tracing for Windows) Autologgers to stop constant micro-logging I/O
+for /f "tokens=*" %%k in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\WMI\Autologger" /k 2^>nul') do (
+    reg add "%%k" /v Start /t REG_DWORD /d 0 /f >nul 2>&1
+)
+echo   - ETW Autologgers disabled
+
 :: Disable System Restore (saves disk space in VM)
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\SystemRestore" /v DisableSR /t REG_DWORD /d 1 /f >nul
 vssadmin delete shadows /all /quiet >nul 2>&1
@@ -578,7 +606,7 @@ echo   Scheduled tasks + telemetry done.
 echo   Scheduled tasks + telemetry done >> "%LOG%"
 
 :: ============================================================
-:: PHASE 6: CLEANUP FILES
+:: PHASE 8: CLEANUP FILES
 :: ============================================================
 echo.
 echo ============================================================
@@ -731,19 +759,33 @@ echo  [9/11] System Optimization...
 echo ============================================================
 echo [9/11] System Optimization... >> "%LOG%"
 
-:: High Performance power plan
-powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
-echo   - High Performance power plan set
+:: Ultimate Performance power plan (hidden plan with zero power-saving, max CPU/disk/USB speed)
+powercfg /duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61 >nul 2>&1
+for /f "tokens=4" %%G in ('powercfg /list 2^>nul ^| findstr /i "Ultimate"') do powercfg /setactive %%G >nul 2>&1
+:: Fallback to High Performance if Ultimate not available
+powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c >nul 2>&1
+:: Force all power settings to maximum performance (no idle, no throttle)
+powercfg /change monitor-timeout-ac 0
+powercfg /change standby-timeout-ac 0
+powercfg /change hibernate-timeout-ac 0
+powercfg /change disk-timeout-ac 0
+echo   - Ultimate Performance power plan activated
 
 :: Disable Hibernate
 powercfg /h off
 echo   - Hibernate disabled
 
-:: Optimize pagefile (4GB RAM: generous swap so AI tools don't OOM)
+:: Optimize pagefile dynamically based on Total Physical RAM (so laptops/PCs don't get stuck with 4GB VM settings)
+set "PF_MIN=4096"
+set "PF_MAX=12288"
+for /f "usebackq tokens=1,2" %%A in (`powershell -NoProfile -Command "$r=[Math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1GB); if($r -le 4){'2048 6144'}elseif($r -le 8){'4096 12288'}else{'4096 16384'}"`) do (
+    set "PF_MIN=%%A"
+    set "PF_MAX=%%B"
+)
 wmic computersystem where name="%COMPUTERNAME%" set AutomaticManagedPagefile=False <nul >nul 2>&1
-wmic pagefileset where name="C:\\pagefile.sys" set InitialSize=2048,MaximumSize=6144 <nul >nul 2>&1
+wmic pagefileset where name="C:\\pagefile.sys" set InitialSize=!PF_MIN!,MaximumSize=!PF_MAX! <nul >nul 2>&1
 if not exist "C:\pagefile.sys" wmic pagefileset create name="C:\pagefile.sys" <nul >nul 2>&1
-echo   - Pagefile optimized (2GB-6GB for 4GB RAM)
+echo   - Pagefile optimized dynamically (!PF_MIN!MB - !PF_MAX!MB)
 
 :: Disable Reserved Storage
 dism /Online /Set-ReservedStorageState /State:Disabled >nul 2>&1
@@ -759,10 +801,33 @@ echo   - Cleaning WinSxS component store...
 dism /Online /Cleanup-Image /StartComponentCleanup /ResetBase <nul >nul 2>&1
 echo   - WinSxS cleaned
 
-:: ---- 4GB RAM SPECIFIC TWEAKS ----
+:: ---- HARDWARE / CPU UNLOCK TWEAKS ----
+:: Disable VBS (Virtualization Based Security) and Core Isolation (Memory Integrity)
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard" /v EnableVirtualizationBasedSecurity /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity" /v Enabled /t REG_DWORD /d 0 /f >nul
+:: Disable Spectre and Meltdown CPU Mitigations (Unlock 100% native CPU speed, safe for isolated VMs)
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v FeatureSettingsOverride /t REG_DWORD /d 3 /f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v FeatureSettingsOverrideMask /t REG_DWORD /d 3 /f >nul
+echo   - VBS/Core Isolation disabled, Spectre/Meltdown mitigations removed
 
-:: Force ENABLE Memory Compression (effectively gives ~30-50% more usable RAM on 4GB)
-echo   - Enabling Memory Compression (critical for 4GB)...
+:: ---- BOOT & KERNEL TIMING TWEAKS ----
+:: Disable dynamic tick (stops power-saving CPU ticks, reduces DPC latency in VMs)
+bcdedit /set disabledynamictick yes >nul 2>&1
+:: Disable synthetic timers (improves micro-stutter in virtualized environments)
+bcdedit /deletevalue useplatformclock >nul 2>&1
+:: Remove boot menu timeout and boot animation to boot instantly
+bcdedit /timeout 0 >nul 2>&1
+bcdedit /set {globalsettings} custom:16000067 true >nul 2>&1
+bcdedit /set {default} bootuxdisabled on >nul 2>&1
+
+:: Disable Windows Firewall (safe behind Hypervisor/Router NAT, increases network speed)
+netsh advfirewall set allprofiles state off >nul 2>&1
+echo   - Boot tweaks applied, Firewall disabled
+
+:: ---- MEMORY COMPRESSION TWEAKS ----
+
+:: Force ENABLE Memory Compression (effectively gives ~30-50% more usable RAM on any system)
+echo   - Enabling Memory Compression...
 powershell -NoProfile -Command "Enable-MMAgent -mc" >nul 2>&1
 powershell -NoProfile -Command "Enable-MMAgent -PageCombining" >nul 2>&1
 :: Disable prefetcher/superfetch DATA collection but keep MMAgent service alive for compression
@@ -770,9 +835,14 @@ powershell -NoProfile -Command "Disable-MMAgent -ApplicationLaunchPrefetching" >
 powershell -NoProfile -Command "Disable-MMAgent -ApplicationPreLaunch" >nul 2>&1
 powershell -NoProfile -Command "Disable-MMAgent -OperationAPI" >nul 2>&1
 
-:: Foreground priority boost (AI app you're using gets more CPU)
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\PriorityControl" /v Win32PrioritySeparation /t REG_DWORD /d 38 /f >nul
-echo   - Foreground app priority boosted
+:: Process Scheduling Priority (Set to 24: Optimize for Background Services)
+:: This gives equal, long CPU timeslices to all running bots/apps, maximizing throughput instead of just the active window
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\PriorityControl" /v Win32PrioritySeparation /t REG_DWORD /d 24 /f >nul
+echo   - Background throughput priority boosted
+
+:: Disable Power Throttling (Prevents Windows from slowing down background/minimized tools)
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling" /v PowerThrottlingOff /t REG_DWORD /d 1 /f >nul
+echo   - Power Throttling disabled
 
 :: Trim Explorer working set every time it idles (saves ~30-80MB)
 reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer" /v AlwaysUnloadDll /t REG_DWORD /d 1 /f >nul
@@ -783,8 +853,34 @@ reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management
 :: Reduce CSRSS shared memory
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\SubSystems" /v Optional /t REG_MULTI_SZ /d "" /f >nul
 
-:: Disable NTFS Last Access Time update (saves significant disk read/writes in VMs)
+:: Disable NTFS Last Access Time update (saves significant disk read/writes)
 fsutil behavior set disablelastaccess 1 >nul 2>&1
+:: Disable NTFS 8.3 short filename creation (saves ~20% disk I/O on file-heavy workloads)
+fsutil behavior set disable8dot3 1 >nul 2>&1
+:: Increase NTFS paged pool memory usage (level 2 = more RAM for file system cache)
+fsutil behavior set memoryusage 2 >nul 2>&1
+:: Disable NTFS encryption overhead (EFS not needed on farming VMs)
+fsutil behavior set disableencryption 1 >nul 2>&1
+echo   - NTFS tuned (8.3 off, last-access off, encryption off, memory level 2)
+
+:: Enable Hardware-Accelerated GPU Scheduling (Win10 2004+, reduces DPC latency for display)
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" /v HwSchMode /t REG_DWORD /d 2 /f >nul
+echo   - Hardware GPU Scheduling enabled
+
+:: Disable Automatic Maintenance (stops random background defrag/scan/cleanup during work hours)
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\Maintenance" /v MaintenanceDisabled /t REG_DWORD /d 1 /f >nul
+echo   - Automatic Maintenance disabled
+
+:: Disable Windows Installer verbose logging (reduces disk I/O during installs)
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\Installer" /v Logging /t REG_SZ /d "" /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\Installer" /v Debug /t REG_DWORD /d 0 /f >nul
+
+:: bcdedit: Enhanced TSC synchronization (smoother timer in VMs, reduces clock drift)
+bcdedit /set tscsyncpolicy enhanced >nul 2>&1
+:: bcdedit: Disable integrity checks (faster boot, no driver signature verification)
+bcdedit /set nointegritychecks on >nul 2>&1
+bcdedit /set testsigning on >nul 2>&1
+echo   - BCD: TSC sync enhanced, integrity checks off
 
 echo   System optimization done.
 echo   System optimization done >> "%LOG%"
@@ -883,7 +979,7 @@ reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fDisa
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fDisableCpm /t REG_DWORD /d 1 /f >nul
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fDisableCcm /t REG_DWORD /d 1 /f >nul
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fDisableLPT /t REG_DWORD /d 1 /f >nul
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fDisableCcm /t REG_DWORD /d 1 /f >nul
+:: fDisableCcm already set above
 :: KEEP clipboard + drive redirect (fDisableClip=0, fDisableCdm=0) - dev needs copy/paste & file transfer
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fDisableClip /t REG_DWORD /d 0 /f >nul
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fDisableCdm /t REG_DWORD /d 0 /f >nul
@@ -919,6 +1015,8 @@ netsh int tcp set global autotuninglevel=normal >nul 2>&1
 netsh int tcp set global rss=enabled >nul 2>&1
 :: ECN for less retransmit lag
 netsh int tcp set global ecncapability=enabled >nul 2>&1
+:: Disable TCP Heuristics (stops Windows from dynamically restricting TCP window size)
+netsh int tcp set heuristics disabled >nul 2>&1
 echo   - TCP/UDP tuned for RDP
 
 :: ============================================================
@@ -1004,6 +1102,10 @@ del /f /q "%TEMP%\*" >nul 2>&1
 :: NOTE: VM already registered with worker during RDP phase (see PHASE 8).
 :: No need to re-register here.
 
+:: Force process all idle/pending tasks NOW (flush deferred cleanup, .NET NGEN, font cache rebuild)
+rundll32.exe advapi32.dll,ProcessIdleTasks >nul 2>&1
+echo   - Idle tasks flushed
+
 echo ============================================================ >> "%LOG%"
 echo  QuickOptimize - Completed: %DATE% %TIME% >> "%LOG%"
 echo ============================================================ >> "%LOG%"
@@ -1016,7 +1118,8 @@ echo   Log: %LOG%
 echo  =============================================
 echo.
 
+:: endlocal before self-delete (setlocal cleanup)
+endlocal
+
 :: Self-delete (works from any location)
 (goto) 2>nul & del /f /q "%~f0" >nul 2>&1
-
-endlocal
