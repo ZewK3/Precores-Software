@@ -278,7 +278,7 @@ for %%S in (
     embeddedmode COMSysApp WEPHOSTSVC PerfHost
     Netlogon Netman RmSvc
     SDRSVC seclogon shpamsvc TieringEngineService
-    SNMPTRAP swprv UmRdpService upnphost vds
+    SNMPTRAP swprv upnphost vds
     BTAGService bthserv BthAvctpSvc
     SharedRealitySvc spectrum
     MicrosoftEdgeElevationService
@@ -1085,6 +1085,26 @@ echo !RDP_PORT! > "C:\rdp_port.txt"
 
 echo   Remote Desktop enabled + optimized for mRemoteNG.
 echo   Remote Desktop enabled + optimized (port !RDP_PORT!) >> "%LOG%"
+
+:: ---- HEARTBEAT: Keep VM "Online" in dashboard ----
+:: Create heartbeat script that sends POST /heartbeat every 2 minutes
+set "HB_SCRIPT=C:\vm_heartbeat.ps1"
+(
+echo $ProgressPreference = 'SilentlyContinue'
+echo [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+echo $url = '%VM_REGISTRY_URL%/heartbeat'
+echo $hostname = $env:COMPUTERNAME
+echo $ip = ^(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue ^| Where-Object {$_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.*'} ^| Select-Object -First 1^).IPAddress
+echo $body = @{ hostname = $hostname; ip = $ip } ^| ConvertTo-Json
+echo try { Invoke-RestMethod -Uri $url -Method POST -Body $body -ContentType 'application/json' -TimeoutSec 10 ^| Out-Null } catch {}
+) > "%HB_SCRIPT%"
+
+:: Register Scheduled Task to run heartbeat every 2 minutes (survives reboot)
+schtasks /Delete /TN "VM_Heartbeat" /F >nul 2>&1
+schtasks /Create /TN "VM_Heartbeat" /SC MINUTE /MO 2 /TR "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\vm_heartbeat.ps1" /RU SYSTEM /RL HIGHEST /F >nul 2>&1
+:: Run it once immediately
+schtasks /Run /TN "VM_Heartbeat" >nul 2>&1
+echo   - Heartbeat scheduled (every 2 min)
 
 :: ============================================================
 :: PHASE 9: FINAL CLEANUP

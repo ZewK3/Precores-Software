@@ -50,7 +50,7 @@ set "RUSTDESK_URL=https://github.com/rustdesk/rustdesk/releases/download/1.4.6/r
 
 :: --- Virtualization (auto-detect) ---
 set "VIRTIO_URL=https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/latest-virtio/virtio-win-guest-tools.exe"
-set "VMTOOLS_URL=https://packages.vmware.com/tools/releases/latest/windows/x64/VMware-tools-13.0.10-25056151-x64.exe"
+set "VMTOOLS_URL=https://packages.vmware.com/tools/releases/latest/windows/x64/VMware-tools-13.1.0-25218885-x64.exe"
 
 :: --- Runtime ---
 set "VCREDIST_URL=https://aka.ms/vs/17/release/vc_redist.x64.exe"
@@ -298,13 +298,19 @@ if /i "%UNIKEY_URL%"=="SKIP" (
             powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -LiteralPath '%DL_DIR%\unikey.zip' -DestinationPath '!UNIKEY_ROOT!' -Force" >nul 2>&1
             del /f /q "%DL_DIR%\unikey.zip" >nul 2>&1
 
-            set "UNIKEY_EXE="
-            for /r "!UNIKEY_ROOT!" %%F in (UniKeyNT.exe) do if not defined UNIKEY_EXE set "UNIKEY_EXE=%%F"
+            REM Flatten: if zip created a subfolder, move everything up to UNIKEY_ROOT
+            for /d %%D in ("!UNIKEY_ROOT!\*") do (
+                if exist "%%D\UniKeyNT.exe" (
+                    xcopy "%%D\*" "!UNIKEY_ROOT!\" /E /Y /Q >nul 2>&1
+                    rmdir /s /q "%%D" >nul 2>&1
+                )
+            )
 
-            if defined UNIKEY_EXE (
-                powershell -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut('%PUBLIC%\Desktop\UniKey.lnk');$s.TargetPath='!UNIKEY_EXE!';$s.WorkingDirectory=(Split-Path '!UNIKEY_EXE!');$s.Save()" >nul 2>&1
-                powershell -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('CommonStartup')+'\UniKey.lnk');$s.TargetPath='!UNIKEY_EXE!';$s.WorkingDirectory=(Split-Path '!UNIKEY_EXE!');$s.Save()" >nul 2>&1
-                start "" "!UNIKEY_EXE!"
+            if exist "!UNIKEY_ROOT!\UniKeyNT.exe" (
+                set "UNIKEY_EXE=!UNIKEY_ROOT!\UniKeyNT.exe"
+                powershell -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut('%PUBLIC%\Desktop\UniKey.lnk');$s.TargetPath='!UNIKEY_ROOT!\UniKeyNT.exe';$s.WorkingDirectory='!UNIKEY_ROOT!';$s.Save()" >nul 2>&1
+                powershell -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('CommonStartup')+'\UniKey.lnk');$s.TargetPath='!UNIKEY_ROOT!\UniKeyNT.exe';$s.WorkingDirectory='!UNIKEY_ROOT!';$s.Save()" >nul 2>&1
+                start "" "!UNIKEY_ROOT!\UniKeyNT.exe"
                 echo        Done. UniKey installed to "!UNIKEY_ROOT!".
             ) else (
                 echo        WARNING: UniKeyNT.exe not found after extract.
