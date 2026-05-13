@@ -245,7 +245,9 @@ if exist "%SystemRoot%\UpdateAssistant" (
     rmdir /s /q "%SystemRoot%\UpdateAssistant" >nul 2>&1
 )
 
-:: Disable 60+ unnecessary services (low-RAM dev VM: keep TokenBroker, InstallService, StorSvc, Dhcp, Dnscache, LanmanWorkstation, NlaSvc, EventLog, RpcSs, RpcEptMapper, CryptSvc, Power, BFE, mpssvc, ProfSvc, gpsvc, Schedule, UserManager, LSM, AudioSrv, AudioEndpointBuilder, Themes)
+:: Disable 60+ unnecessary services (low-RAM dev VM)
+:: KEEP for RDP: TermService, UmRdpService, SessionEnv, NcbService, Netman (network), PolicyAgent, IKEEXT
+:: KEEP for system: TokenBroker, InstallService, StorSvc, Dhcp, Dnscache, LanmanWorkstation, NlaSvc, EventLog, RpcSs, RpcEptMapper, CryptSvc, Power, BFE, mpssvc, ProfSvc, gpsvc, Schedule, UserManager, LSM, AudioSrv, AudioEndpointBuilder, Themes
 :: IMPORTANT: SysMain is KEPT enabled because Windows Memory Compression depends on it.
 :: Superfetch/Prefetch behavior is already disabled via registry (EnablePrefetcher=0, EnableSuperfetch=0).
 :: On 4GB systems, memory compression saves ~30-50% RAM by compressing cold pages.
@@ -255,7 +257,7 @@ for %%S in (
     XblAuthManager XblGameSave XboxNetApiSvc XboxGipSvc
     RemoteRegistry RemoteAccess SharedAccess TrkWks
     WMPNetworkSvc WpcMonSvc SEMgrSvc PhoneSvc
-    TabletInputService WbioSrvc icssvc NcbService
+    TabletInputService WbioSrvc icssvc
     PcaSvc SCardSvr ScDeviceEnum EntAppSvc AJRouter
     DmEnrollmentSvc DPS WdiServiceHost WdiSystemHost
     WpnService WpnUserService_* CDPSvc CDPUserSvc_*
@@ -273,10 +275,10 @@ for %%S in (
     SensorService SensrSvc SensorDataService DevQueryBroker
     ssh-agent sshd ssh-broker-svc AssignedAccessManagerSvc
     AppReadiness AppMgmt AppVClient ClipSVC
-    AeLookupSvc PolicyAgent IKEEXT SstpSvc
+    AeLookupSvc SstpSvc
     NaturalAuthentication GraphicsPerfSvc
     embeddedmode COMSysApp WEPHOSTSVC PerfHost
-    Netlogon Netman RmSvc
+    Netlogon RmSvc
     SDRSVC seclogon shpamsvc TieringEngineService
     SNMPTRAP swprv upnphost vds
     BTAGService bthserv BthAvctpSvc
@@ -287,6 +289,7 @@ for %%S in (
     sc config %%S start= disabled >nul 2>&1
 )
 :: NOTE: Some services above may not exist on all SKUs; "sc config" silently fails for absent services.
+:: Critical for RDP NOT in disable list: TermService, UmRdpService, SessionEnv, NcbService, Netman, PolicyAgent, IKEEXT
 :: Critical for graphics/audio/network NOT in disable list: Themes, AudioSrv, AudioEndpointBuilder, Dhcp, Dnscache, LanmanWorkstation, EventLog, RpcSs, mpssvc, BFE, SysMain (for Memory Compression)
 
 echo   Services disabled + files removed.
@@ -820,9 +823,8 @@ bcdedit /timeout 0 >nul 2>&1
 bcdedit /set {globalsettings} custom:16000067 true >nul 2>&1
 bcdedit /set {default} bootuxdisabled on >nul 2>&1
 
-:: Disable Windows Firewall (safe behind Hypervisor/Router NAT, increases network speed)
-netsh advfirewall set allprofiles state off >nul 2>&1
-echo   - Boot tweaks applied, Firewall disabled
+:: NOTE: Firewall will be disabled AFTER RDP rules are configured (PHASE 8)
+echo   - Boot tweaks applied
 
 :: ---- MEMORY COMPRESSION TWEAKS ----
 
@@ -898,12 +900,30 @@ echo [10/11] Enabling Remote Desktop... >> "%LOG%"
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server" /v fDenyTSConnections /t REG_DWORD /d 0 /f >nul
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v UserAuthentication /t REG_DWORD /d 0 /f >nul
 
+:: Ensure firewall is ON temporarily to configure RDP rules
+netsh advfirewall set allprofiles state on >nul 2>&1
 :: Enable RDP firewall rules
 netsh advfirewall firewall set rule group="Remote Desktop" new enable=yes >nul 2>&1
 
-:: Start RDP service
+:: ---- Enable ALL RDP-required services ----
+:: TermService = Remote Desktop Services (core RDP listener)
 sc config TermService start= auto >nul 2>&1
 sc start TermService >nul 2>&1
+:: UmRdpService = Remote Desktop Services UserMode Port Redirector (clipboard/drive/device redirection)
+sc config UmRdpService start= auto >nul 2>&1
+sc start UmRdpService >nul 2>&1
+:: SessionEnv = Remote Desktop Configuration (per-session config, MANDATORY for RDP to accept connections)
+sc config SessionEnv start= auto >nul 2>&1
+sc start SessionEnv >nul 2>&1
+:: NcbService = Network Connection Broker (manages network connections for RDP)
+sc config NcbService start= auto >nul 2>&1
+sc start NcbService >nul 2>&1
+:: Netman = Network Connections (required for NIC management, RDP depends on working NIC stack)
+sc config Netman start= demand >nul 2>&1
+:: PolicyAgent = IPsec Policy Agent (network security stack)
+sc config PolicyAgent start= demand >nul 2>&1
+:: IKEEXT = IKE and AuthIP key modules (NLA/network auth)
+sc config IKEEXT start= demand >nul 2>&1
 
 :: ---- RDP Performance (mRemoteNG optimization) ----
 
@@ -1074,11 +1094,30 @@ netsh advfirewall firewall delete rule name="RDP-Custom-Dynamic-UDP" >nul 2>&1
 netsh advfirewall firewall add rule name="RDP-Custom-Dynamic-TCP" dir=in action=allow protocol=TCP localport=!RDP_PORT! profile=any >nul
 netsh advfirewall firewall add rule name="RDP-Custom-Dynamic-UDP" dir=in action=allow protocol=UDP localport=!RDP_PORT! profile=any >nul
 
-:: Restart RDP service to pick up new port
+:: Now disable firewall (safe behind Hypervisor/Router NAT, RDP rules already applied)
+netsh advfirewall set allprofiles state off >nul 2>&1
+echo   - Firewall disabled (rules already applied)
+
+:: Restart ALL RDP services to pick up new port
 sc stop UmRdpService >nul 2>&1
+sc stop SessionEnv >nul 2>&1
 sc stop TermService >nul 2>&1
+timeout /t 2 /nobreak >nul
 sc start TermService >nul 2>&1
-echo   - RDP listening on port: !RDP_PORT!
+sc start SessionEnv >nul 2>&1
+sc start UmRdpService >nul 2>&1
+
+:: Verify RDP is actually listening
+echo   - Verifying RDP listener...
+timeout /t 3 /nobreak >nul
+netstat -an | findstr ":!RDP_PORT! " >nul 2>&1
+if !errorlevel! equ 0 (
+    echo   - [OK] RDP confirmed listening on port !RDP_PORT!
+    echo   [OK] RDP confirmed on port !RDP_PORT! >> "%LOG%"
+) else (
+    echo   - [WARN] RDP port !RDP_PORT! not detected yet ^(may start after reboot^)
+    echo   [WARN] RDP port !RDP_PORT! not detected >> "%LOG%"
+)
 
 :: Save port to a file for QuickInstall / VM registry
 echo !RDP_PORT! > "C:\rdp_port.txt"
