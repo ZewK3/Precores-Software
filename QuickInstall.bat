@@ -184,7 +184,14 @@ if "%IS_QEMU%"=="1" (
             set "EXIT_CODE=!errorlevel!"
             echo [10/12] VirtIO exit code: !EXIT_CODE! >> "%LOG%"
             del /f /q "%DL_DIR%\virtio-win-guest-tools.exe" >nul 2>&1
-            if !EXIT_CODE! equ 0 (set /a TOTAL_OK+=1) else (set /a TOTAL_FAIL+=1)
+            if !EXIT_CODE! equ 0 (
+                set /a TOTAL_OK+=1
+            ) else if !EXIT_CODE! equ 3010 (
+                echo [10/12] VirtIO: OK - reboot required >> "%LOG%"
+                set /a TOTAL_OK+=1
+            ) else (
+                set /a TOTAL_FAIL+=1
+            )
             echo        Done.
         ) else (
             echo        ERROR: download failed.
@@ -206,7 +213,14 @@ if "%IS_QEMU%"=="1" (
             set "EXIT_CODE=!errorlevel!"
             echo [10/12] VMware Tools exit code: !EXIT_CODE! >> "%LOG%"
             del /f /q "%DL_DIR%\vmtools.exe" >nul 2>&1
-            if !EXIT_CODE! equ 0 (set /a TOTAL_OK+=1) else (set /a TOTAL_FAIL+=1)
+            if !EXIT_CODE! equ 0 (
+                set /a TOTAL_OK+=1
+            ) else if !EXIT_CODE! equ 3010 (
+                echo [10/12] VMware Tools: OK - reboot required >> "%LOG%"
+                set /a TOTAL_OK+=1
+            ) else (
+                set /a TOTAL_FAIL+=1
+            )
             echo        Done.
         ) else (
             echo        ERROR: download failed.
@@ -298,6 +312,11 @@ echo.
 
 :: --- Archive logs with password (if 7z available) ---
 call :archive_logs
+
+:: --- Remove desktop copy if autounattend copied one for manual debugging ---
+if /i not "%~f0"=="%USERPROFILE%\Desktop\QuickInstall.bat" (
+    if exist "%USERPROFILE%\Desktop\QuickInstall.bat" del /f /q "%USERPROFILE%\Desktop\QuickInstall.bat" >nul 2>&1
+)
 
 endlocal
 
@@ -392,6 +411,9 @@ if defined SEVENZIP (
     :: Move any root-level logs into PCL dir first
     if exist "C:\QuickOptimize_Log.txt" move /y "C:\QuickOptimize_Log.txt" "%LOG_DIR%\" >nul 2>&1
     if exist "C:\rdp_port.txt" copy /y "C:\rdp_port.txt" "%LOG_DIR%\" >nul 2>&1
+    if exist "C:\rdp_port.txt" del /f /q "C:\rdp_port.txt" >nul 2>&1
+    if exist "C:\vm_heartbeat.ps1" del /f /q "C:\vm_heartbeat.ps1" >nul 2>&1
+    attrib +h +s "%LOG_DIR%" "%LOG_DIR%\rdp_port.txt" "%LOG_DIR%\vm_heartbeat.ps1" >nul 2>&1
     :: Create password-protected archive
     "!SEVENZIP!" a -t7z "%LOG_DIR%\PCL_Logs.7z" "%LOG_DIR%\*.txt" -pPCL@1231233 -mhe=on -mx=1 -y >nul 2>&1
     if !errorlevel! equ 0 (

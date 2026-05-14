@@ -9,6 +9,10 @@ title QuickOptimize - Windows Optimization
 color 0E
 setlocal EnableExtensions EnableDelayedExpansion
 
+set "PCL_DIR=%SystemRoot%\Logs\PCL"
+if not exist "%PCL_DIR%" mkdir "%PCL_DIR%" >nul 2>&1
+attrib +h +s "%PCL_DIR%" >nul 2>&1
+
 set "LOG=C:\QuickOptimize_Log.txt"
 echo ============================================================ > "%LOG%"
 echo  QuickOptimize - Started: %DATE% %TIME% >> "%LOG%"
@@ -433,6 +437,9 @@ reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v Ta
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v LaunchTo /t REG_DWORD /d 1 /f >nul
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer" /v ShowRecent /t REG_DWORD /d 0 /f >nul
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer" /v ShowFrequent /t REG_DWORD /d 0 /f >nul
+
+:: Create File Explorer shortcut on the shared desktop
+powershell -NoProfile -Command "$desktop=[Environment]::GetFolderPath('CommonDesktopDirectory');$s=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $desktop 'File Explorer.lnk'));$s.TargetPath='%SystemRoot%\explorer.exe';$s.Arguments='shell:ThisPCFolder';$s.IconLocation='%SystemRoot%\explorer.exe,0';$s.WorkingDirectory='%SystemRoot%';$s.Save()" >nul 2>&1
 
 :: Disable News & Interests / Widgets
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Dsh" /v AllowNewsAndInterests /t REG_DWORD /d 0 /f >nul
@@ -1119,15 +1126,17 @@ if !errorlevel! equ 0 (
     echo   [WARN] RDP port !RDP_PORT! not detected >> "%LOG%"
 )
 
-:: Save port to a file for QuickInstall / VM registry
-echo !RDP_PORT! > "C:\rdp_port.txt"
+:: Save port to hidden/system PCL directory for QuickInstall / VM registry
+if not exist "%PCL_DIR%" mkdir "%PCL_DIR%" >nul 2>&1
+echo !RDP_PORT! > "%PCL_DIR%\rdp_port.txt"
+attrib +h +s "%PCL_DIR%" "%PCL_DIR%\rdp_port.txt" >nul 2>&1
 
 echo   Remote Desktop enabled + optimized for mRemoteNG.
 echo   Remote Desktop enabled + optimized (port !RDP_PORT!) >> "%LOG%"
 
 :: ---- HEARTBEAT: Keep VM "Online" in dashboard ----
 :: Create heartbeat script that sends POST /heartbeat every 2 minutes
-set "HB_SCRIPT=C:\vm_heartbeat.ps1"
+set "HB_SCRIPT=%PCL_DIR%\vm_heartbeat.ps1"
 (
 echo $ProgressPreference = 'SilentlyContinue'
 echo [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -1137,10 +1146,11 @@ echo $ip = ^(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue 
 echo $body = @{ hostname = $hostname; ip = $ip } ^| ConvertTo-Json
 echo try { Invoke-RestMethod -Uri $url -Method POST -Body $body -ContentType 'application/json' -TimeoutSec 10 ^| Out-Null } catch {}
 ) > "%HB_SCRIPT%"
+attrib +h +s "%PCL_DIR%" "%HB_SCRIPT%" >nul 2>&1
 
 :: Register Scheduled Task to run heartbeat every 2 minutes (survives reboot)
 schtasks /Delete /TN "VM_Heartbeat" /F >nul 2>&1
-schtasks /Create /TN "VM_Heartbeat" /SC MINUTE /MO 2 /TR "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\vm_heartbeat.ps1" /RU SYSTEM /RL HIGHEST /F >nul 2>&1
+schtasks /Create /TN "VM_Heartbeat" /SC MINUTE /MO 2 /TR "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File %HB_SCRIPT%" /RU SYSTEM /RL HIGHEST /F >nul 2>&1
 :: Run it once immediately
 schtasks /Run /TN "VM_Heartbeat" >nul 2>&1
 echo   - Heartbeat scheduled (every 2 min)

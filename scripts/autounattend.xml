@@ -188,8 +188,8 @@
         </SynchronousCommand>
         <SynchronousCommand wcm:action="add">
           <Order>4</Order>
-          <CommandLine>cmd /c if exist "C:\QuickInstall.bat" (copy /y "C:\QuickInstall.bat" "%USERPROFILE%\Desktop\QuickInstall.bat" &amp; call "C:\QuickInstall.bat")</CommandLine>
-          <Description>Copy to Desktop and run QuickInstall</Description>
+          <CommandLine>cmd /c if exist "C:\QuickInstall.bat" call "C:\QuickInstall.bat"</CommandLine>
+          <Description>Run QuickInstall</Description>
         </SynchronousCommand>
       </FirstLogonCommands>
 
