@@ -51,7 +51,7 @@ echo     $nic = Get-CimInstance Win32_NetworkAdapter -Filter 'NetEnabled=True AN
 echo     $mac = if ^($nic^) { $nic.MACAddress } else { '' }
 echo     $ip = ^(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue ^| Where-Object {$_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.*'} ^| Select-Object -First 1^).IPAddress
 echo     $hostname = $env:COMPUTERNAME
-echo     if ^($hostname -match '^(?i:PCLPCL)'^) { $hostname = 'PCL' + $hostname.Substring^(6^) }
+echo     if ^($hostname -like 'PCLPCL*'^) { $hostname = 'PCL' + $hostname.Substring^(6^) }
 echo     if ^($ip^) {
 echo         $body = @{ mac = $mac; hostname = $hostname; ip = $ip; user = 'PCL'; password = 'PCL@1231233'; os = ^(Get-CimInstance Win32_OperatingSystem^).Caption } ^| ConvertTo-Json -Depth 3
 echo         try {
@@ -1056,7 +1056,7 @@ echo $nic = Get-CimInstance Win32_NetworkAdapter -Filter 'NetEnabled=True AND Ph
 echo $mac = if ^($nic^) { $nic.MACAddress } else { '' }
 echo $ip = ^(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue ^| Where-Object {$_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.*'} ^| Select-Object -First 1^).IPAddress
 echo $hostname = $env:COMPUTERNAME
-echo if ^($hostname -match '^(?i:PCLPCL)'^) { $hostname = 'PCL' + $hostname.Substring^(6^) }
+echo if ^($hostname -like 'PCLPCL*'^) { $hostname = 'PCL' + $hostname.Substring^(6^) }
 echo $rd_id = ''
 echo $paths = @("$env:ProgramFiles\RustDesk\config\RustDesk.toml", "$env:ProgramData\RustDesk\config\RustDesk.toml", "$env:LOCALAPPDATA\RustDesk\config\RustDesk.toml", "C:\Windows\System32\config\systemprofile\AppData\Roaming\RustDesk\config\RustDesk.toml", "C:\Users\PCL\AppData\Roaming\RustDesk\config\RustDesk.toml", "C:\Users\Public\RustDesk\config\RustDesk.toml")
 echo foreach^($p in $paths^) {
@@ -1098,7 +1098,7 @@ echo [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::T
 echo $url = '%VM_REGISTRY_URL%/heartbeat'
 echo $registerUrl = '%VM_REGISTRY_URL%/register'
 echo $hostname = $env:COMPUTERNAME
-echo if ^($hostname -match '^(?i:PCLPCL)'^) { $hostname = 'PCL' + $hostname.Substring^(6^) }
+echo if ^($hostname -like 'PCLPCL*'^) { $hostname = 'PCL' + $hostname.Substring^(6^) }
 echo $ip = ^(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue ^| Where-Object {$_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.*'} ^| Select-Object -First 1^).IPAddress
 echo 
 echo $rd_id = ''
@@ -1154,7 +1154,7 @@ set "CMD_AGENT=%PCL_DIR%\vm_command_agent.ps1"
 >> "%CMD_AGENT%" echo [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 >> "%CMD_AGENT%" echo $base = '%VM_REGISTRY_URL%'
 >> "%CMD_AGENT%" echo $hostname = $env:COMPUTERNAME
->> "%CMD_AGENT%" echo if ($hostname -match '^(?i:PCLPCL)') { $hostname = 'PCL' + $hostname.Substring(6) }
+>> "%CMD_AGENT%" echo if ($hostname -like 'PCLPCL*') { $hostname = 'PCL' + $hostname.Substring(6) }
 >> "%CMD_AGENT%" echo $seen = @{}
 >> "%CMD_AGENT%" echo while ($true) {
 >> "%CMD_AGENT%" echo     try {
