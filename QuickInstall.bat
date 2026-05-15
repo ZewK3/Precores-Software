@@ -236,6 +236,7 @@ if "%IS_QEMU%"=="1" (
 
 :: --- RustDesk ---
 call :install_app "11/12" "RustDesk" "%RUSTDESK_URL%" "rustdesk.exe" "rustdesk" "%ProgramFiles%\RustDesk\rustdesk.exe" "%ProgramFiles(x86)%\RustDesk\rustdesk.exe"
+call :configure_rustdesk
 
 :: --- UniKey ---
 if /i "%UNIKEY_URL%"=="SKIP" (
@@ -394,6 +395,77 @@ if !EXIT_CODE! equ 0 (
     echo [!_STEP!] !_NAME!: COMPLETED WITH EXIT CODE !EXIT_CODE! >> "%LOG%"
     set /a TOTAL_OK+=1
 )
+exit /b 0
+
+:: ============================================================
+:: SUBROUTINE: configure_rustdesk
+:: Set unattended password, read RustDesk ID, and publish VM to dashboard.
+:: ============================================================
+:configure_rustdesk
+echo [11/12] RustDesk: configuring unattended access...
+echo [11/12] RustDesk: configuring unattended access >> "%LOG%"
+
+set "VM_REGISTRY_URL=https://vm-registry.zewk.workers.dev"
+set "RUSTDESK_PASSWORD=PCL@1231233"
+set "PS_RD=%TEMP%\rustdesk_register.ps1"
+(
+echo $ProgressPreference = 'SilentlyContinue'
+echo [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+echo $exe = @^('C:\Program Files\RustDesk\rustdesk.exe','C:\Program Files ^(x86^)\RustDesk\rustdesk.exe'^) ^| Where-Object { Test-Path $_ } ^| Select-Object -First 1
+echo if ^(-not $exe^) { Write-Output 'RUSTDESK_EXE_NOT_FOUND'; exit 1 }
+echo try {
+echo     $svc = Get-Service -Name 'Rustdesk' -ErrorAction SilentlyContinue
+echo     if ^(-not $svc^) { ^& $exe --install-service ^| Out-Null; Start-Sleep -Seconds 10; $svc = Get-Service -Name 'Rustdesk' -ErrorAction SilentlyContinue }
+echo     if ^($svc -and $svc.Status -ne 'Running'^) { Start-Service -Name $svc.Name -ErrorAction SilentlyContinue; Start-Sleep -Seconds 5 }
+echo } catch { Write-Output ^('RUSTDESK_SERVICE_WARN ' + $_.Exception.Message^) }
+echo try {
+echo     ^& $exe --password '%RUSTDESK_PASSWORD%' ^| Out-Null
+echo     Write-Output 'RUSTDESK_PASSWORD_OK'
+echo } catch {
+echo     Write-Output ^('RUSTDESK_PASSWORD_ERROR ' + $_.Exception.Message^)
+echo }
+echo $rd_id = ''
+echo function Get-RustDeskId {
+echo     try {
+echo         $cmdOut = ^(cmd.exe /d /s /c "`"$exe`" --get-id ^| more" 2^>$null^)
+echo         foreach ^($line in $cmdOut^) {
+echo             $clean = $line.Trim^(^)
+echo             if ^($clean -match '^\d+$'^) { return $clean }
+echo         }
+echo     } catch {}
+echo     $paths = @^(
+echo         "$env:ProgramFiles\RustDesk\config\RustDesk.toml",
+echo         "$env:ProgramData\RustDesk\config\RustDesk.toml",
+echo         "$env:LOCALAPPDATA\RustDesk\config\RustDesk.toml",
+echo         "C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config\RustDesk.toml",
+echo         "C:\Windows\System32\config\systemprofile\AppData\Roaming\RustDesk\config\RustDesk.toml",
+echo         "C:\Users\Public\RustDesk\config\RustDesk.toml"
+echo     ^)
+echo     foreach ^($p in $paths^) {
+echo         if ^(Test-Path $p^) {
+echo             $raw = Get-Content $p -Raw
+echo             if ^($raw -match "id\s*=\s*['""]?(\d+)['""]?"^) { return $Matches[1].Trim^(^) }
+echo         }
+echo     }
+echo     return ''
+echo }
+echo for ^($i = 1; $i -le 30; $i++^) {
+echo     $rd_id = Get-RustDeskId
+echo     if ^($rd_id^) { break }
+echo     Start-Sleep -Seconds 5
+echo }
+echo if ^(-not $rd_id^) { Write-Output 'RUSTDESK_ID_NOT_READY'; exit 1 }
+echo $nic = Get-CimInstance Win32_NetworkAdapter -Filter 'NetEnabled=True AND PhysicalAdapter=True' ^| Select-Object -First 1
+echo $mac = if ^($nic^) { $nic.MACAddress } else { '' }
+echo $ip = ^(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue ^| Where-Object {$_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.*'} ^| Select-Object -First 1^).IPAddress
+echo $hostname = $env:COMPUTERNAME
+echo if ^($hostname -like 'PCLPCL*'^) { $hostname = 'PCL' + $hostname.Substring^(6^) }
+echo $body = @{ mac = $mac; hostname = $hostname; ip = $ip; rustdesk = $rd_id; user = 'PCL'; password = '%RUSTDESK_PASSWORD%'; os = ^(Get-CimInstance Win32_OperatingSystem^).Caption } ^| ConvertTo-Json -Depth 3
+echo try { Invoke-RestMethod -Uri '%VM_REGISTRY_URL%/register' -Method POST -Body $body -ContentType 'application/json' -TimeoutSec 15 ^| Out-Null; Write-Output ^('RUSTDESK_REGISTER_OK ' + $hostname + ' ' + $rd_id^) } catch { Write-Output ^('RUSTDESK_REGISTER_ERROR ' + $_.Exception.Message^); exit 1 }
+) > "%PS_RD%"
+
+powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_RD%" >> "%LOG%" 2>&1
+del /f /q "%PS_RD%" >nul 2>&1
 exit /b 0
 
 :: ============================================================
