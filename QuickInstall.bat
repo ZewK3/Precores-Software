@@ -58,7 +58,7 @@ set "TELEGRAM_URL=SKIP"
 :: --- Vietnamese Input ---
 set "UNIKEY_URL=https://www.unikey.org/assets/release/unikey46RC2-230919-win64.zip"
 
-:: --- Remote Desktop ---
+:: --- RustDesk Remote Control ---
 set "RUSTDESK_URL=https://github.com/rustdesk/rustdesk/releases/download/1.4.6/rustdesk-1.4.6-x86_64.exe"
 
 :: --- Virtualization (auto-detect) ---
@@ -410,10 +410,8 @@ if defined SEVENZIP (
     echo [*] Archiving logs... >> "%LOG%"
     :: Move any root-level logs into PCL dir first
     if exist "C:\QuickOptimize_Log.txt" move /y "C:\QuickOptimize_Log.txt" "%LOG_DIR%\" >nul 2>&1
-    if exist "C:\rdp_port.txt" copy /y "C:\rdp_port.txt" "%LOG_DIR%\" >nul 2>&1
-    if exist "C:\rdp_port.txt" del /f /q "C:\rdp_port.txt" >nul 2>&1
     if exist "C:\vm_heartbeat.ps1" del /f /q "C:\vm_heartbeat.ps1" >nul 2>&1
-    attrib +h +s "%LOG_DIR%" "%LOG_DIR%\rdp_port.txt" "%LOG_DIR%\vm_heartbeat.ps1" >nul 2>&1
+    attrib +h +s "%LOG_DIR%" "%LOG_DIR%\vm_heartbeat.ps1" >nul 2>&1
     :: Create password-protected archive
     "!SEVENZIP!" a -t7z "%LOG_DIR%\PCL_Logs.7z" "%LOG_DIR%\*.txt" -pPCL@1231233 -mhe=on -mx=1 -y >nul 2>&1
     if !errorlevel! equ 0 (
