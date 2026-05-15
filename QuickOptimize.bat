@@ -35,6 +35,44 @@ if %errorlevel% neq 0 (
 )
 
 :: ============================================================
+:: EARLY VM REGISTRATION
+:: ============================================================
+set "VM_REGISTRY_URL=https://vm-registry.zewk.workers.dev"
+echo [0/11] Early VM registration... >> "%LOG%"
+echo   Registering VM with dashboard before long optimization phases...
+
+set "PS_EARLY_REGISTER=%TEMP%\vm_early_register.ps1"
+(
+echo $ProgressPreference = 'SilentlyContinue'
+echo [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+echo $url = '%VM_REGISTRY_URL%/register'
+echo for ^($i = 1; $i -le 30; $i++^) {
+echo     $nic = Get-CimInstance Win32_NetworkAdapter -Filter 'NetEnabled=True AND PhysicalAdapter=True' ^| Select-Object -First 1
+echo     $mac = if ^($nic^) { $nic.MACAddress } else { '' }
+echo     $ip = ^(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue ^| Where-Object {$_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.*'} ^| Select-Object -First 1^).IPAddress
+echo     $hostname = $env:COMPUTERNAME
+echo     if ^($hostname -match '^(?i:PCLPCL)'^) { $hostname = 'PCL' + $hostname.Substring^(6^) }
+echo     if ^($ip^) {
+echo         $body = @{ mac = $mac; hostname = $hostname; ip = $ip; user = 'PCL'; password = 'PCL@1231233'; os = ^(Get-CimInstance Win32_OperatingSystem^).Caption } ^| ConvertTo-Json -Depth 3
+echo         try {
+echo             Invoke-RestMethod -Uri $url -Method POST -Body $body -ContentType 'application/json' -TimeoutSec 15 ^| Out-Null
+echo             Write-Output ^("EARLY_REGISTER_OK " + $hostname + " " + $ip^)
+echo             exit 0
+echo         } catch {
+echo             Write-Output ^("EARLY_REGISTER_ERROR attempt=" + $i + " " + $_.Exception.Message^)
+echo         }
+echo     } else {
+echo         Write-Output ^("EARLY_REGISTER_WAIT_IP attempt=" + $i^)
+echo     }
+echo     Start-Sleep -Seconds 10
+echo }
+echo Write-Output "EARLY_REGISTER_FAILED"
+) > "%PS_EARLY_REGISTER%"
+
+powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_EARLY_REGISTER%" >> "%LOG%" 2>&1
+del /f /q "%PS_EARLY_REGISTER%" >nul 2>&1
+
+:: ============================================================
 :: PHASE 1: REMOVE UWP BLOATWARE
 :: ============================================================
 echo.
@@ -1013,6 +1051,7 @@ echo   - Requesting registration from registry...
 set "PS_REGISTER=%TEMP%\vm_register.ps1"
 (
 echo $ProgressPreference = 'SilentlyContinue'
+echo [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 echo $nic = Get-CimInstance Win32_NetworkAdapter -Filter 'NetEnabled=True AND PhysicalAdapter=True' ^| Select-Object -First 1
 echo $mac = if ^($nic^) { $nic.MACAddress } else { '' }
 echo $ip = ^(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue ^| Where-Object {$_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.*'} ^| Select-Object -First 1^).IPAddress
@@ -1036,10 +1075,10 @@ echo     user = 'PCL'
 echo     password = 'PCL@1231233'
 echo     os = ^(Get-CimInstance Win32_OperatingSystem^).Caption
 echo } ^| ConvertTo-Json
-echo try { Invoke-RestMethod -Uri '%VM_REGISTRY_URL%/register' -Method POST -Body $body -ContentType 'application/json' -UseBasicParsing -TimeoutSec 15 ^| Out-Null } catch {}
+echo try { Invoke-RestMethod -Uri '%VM_REGISTRY_URL%/register' -Method POST -Body $body -ContentType 'application/json' -UseBasicParsing -TimeoutSec 15 ^| Out-Null; Write-Output "REGISTER_OK" } catch { Write-Output ^("REGISTER_ERROR " + $_.Exception.Message^); exit 1 }
 ) > "%PS_REGISTER%"
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_REGISTER%" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_REGISTER%" >> "%LOG%" 2>&1
 del /f /q "%PS_REGISTER%" >nul 2>&1
 
 echo   - VM Registered.
@@ -1104,9 +1143,9 @@ attrib +h +s "%PCL_DIR%" "%HB_SCRIPT%" >nul 2>&1
 
 :: Register Scheduled Task to run heartbeat every 1 minute (Interactive to capture screen)
 schtasks /Delete /TN "VM_Heartbeat" /F >nul 2>&1
-schtasks /Create /TN "VM_Heartbeat" /SC MINUTE /MO 1 /TR "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File %HB_SCRIPT%" /RU "PCL" /IT /RL HIGHEST /F >nul 2>&1
+schtasks /Create /TN "VM_Heartbeat" /SC MINUTE /MO 1 /TR "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File %HB_SCRIPT%" /RU "PCL" /IT /RL HIGHEST /F >> "%LOG%" 2>&1
 :: Run it once immediately
-schtasks /Run /TN "VM_Heartbeat" >nul 2>&1
+schtasks /Run /TN "VM_Heartbeat" >> "%LOG%" 2>&1
 echo   - Heartbeat + Monitoring scheduled (every 1 min)
 
 :: ---- COMMAND AGENT: Poll dashboard commands and execute them locally ----
@@ -1157,8 +1196,8 @@ set "CMD_AGENT=%PCL_DIR%\vm_command_agent.ps1"
 >> "%CMD_AGENT%" echo }
 attrib +h +s "%PCL_DIR%" "%CMD_AGENT%" >nul 2>&1
 schtasks /Delete /TN "VM_CommandAgent" /F >nul 2>&1
-schtasks /Create /TN "VM_CommandAgent" /SC ONLOGON /TR "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File %CMD_AGENT%" /RU "PCL" /IT /RL HIGHEST /F >nul 2>&1
-schtasks /Run /TN "VM_CommandAgent" >nul 2>&1
+schtasks /Create /TN "VM_CommandAgent" /SC ONLOGON /TR "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File %CMD_AGENT%" /RU "PCL" /IT /RL HIGHEST /F >> "%LOG%" 2>&1
+schtasks /Run /TN "VM_CommandAgent" >> "%LOG%" 2>&1
 echo   - Command agent scheduled (polls every 5 sec)
 
 :: ============================================================
