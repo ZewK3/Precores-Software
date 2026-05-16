@@ -467,6 +467,12 @@ EOF
 </channel>
 EOF
         
+        # Enable AutoLogin for LightDM
+        arch-chroot /mnt groupadd -r autologin || true
+        arch-chroot /mnt gpasswd -a $USERNAME autologin || true
+        arch-chroot /mnt sed -i 's/^#autologin-user=.*/autologin-user='"$USERNAME"'/' /etc/lightdm/lightdm.conf
+        arch-chroot /mnt sed -i 's/^#autologin-user-timeout=.*/autologin-user-timeout=0/' /etc/lightdm/lightdm.conf
+
         chown -R 1000:1000 /mnt/home/$USERNAME/.config
         arch-chroot /mnt systemctl enable lightdm
         
