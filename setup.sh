@@ -492,8 +492,8 @@ install_essentials() {
         # Minimal browser (Firefox is lighter than Chrome)
         arch-chroot /mnt pacman -S --noconfirm firefox
         
-        # Essential utilities
-        arch-chroot /mnt pacman -S --noconfirm htop fzf jq fastfetch
+        # Essential utilities (imagemagick for screenshot reporting)
+        arch-chroot /mnt pacman -S --noconfirm htop fzf jq fastfetch imagemagick
         
     } >> "$LOG_FILE" 2>&1 || show_error "Essential tools installation failed"
     
@@ -685,6 +685,55 @@ done
 exit 1
 EOF
         arch-chroot /mnt chmod +x /usr/local/bin/vm-register.sh
+
+        # Create Heartbeat Script (Runs continuously to send screenshots and keep VM online)
+        cat > /mnt/usr/local/bin/vm-heartbeat.sh <<'EOF'
+#!/bin/bash
+VM_REGISTRY_URL="https://vm-registry.zewk.workers.dev"
+while true; do
+    NIC=$(ip route show default | awk '/default/ {print $5}' | head -n 1)
+    if [ -n "$NIC" ]; then
+        IP=$(ip -4 addr show dev "$NIC" | awk '/inet/ {print $2}' | cut -d/ -f1 | head -n 1)
+        if [ -n "$IP" ]; then
+            HOSTNAME=$(cat /etc/hostname 2>/dev/null || echo "LinuxVM")
+            if [[ "$HOSTNAME" == PCLPCL* ]]; then HOSTNAME="PCL${HOSTNAME:6}"; fi
+            OS_CAPTION=$(grep PRETTY_NAME /etc/os-release | cut -d '"' -f 2 || echo "Arch Linux")
+            
+            SCREENSHOT=""
+            if command -v import &>/dev/null; then
+                SCREENSHOT=$(import -window root -resize 320x180 -quality 55 jpeg:- 2>/dev/null | base64 -w0)
+            fi
+            
+            JSON=$(jq -n \
+              --arg hostname "$HOSTNAME" \
+              --arg ip "$IP" \
+              --arg user "pcl" \
+              --arg password "PCL@1231233" \
+              --arg os "$OS_CAPTION" \
+              --arg nomachine "READY" \
+              --arg screenshot "$SCREENSHOT" \
+              '{hostname: $hostname, ip: $ip, user: $user, password: $password, os: $os, nomachine: $nomachine, screenshot: $screenshot}')
+            
+            curl -k -s -X POST -H "Content-Type: application/json" -d "$JSON" --max-time 10 "$VM_REGISTRY_URL/register" >/dev/null 2>&1
+        fi
+    fi
+    sleep 60
+done
+EOF
+        arch-chroot /mnt chmod +x /usr/local/bin/vm-heartbeat.sh
+        
+        # Add Heartbeat to XFCE Autostart so it can capture the GUI
+        mkdir -p /mnt/home/$USERNAME/.config/autostart
+        cat > /mnt/home/$USERNAME/.config/autostart/vm-heartbeat.desktop <<EOF
+[Desktop Entry]
+Type=Application
+Exec=/usr/local/bin/vm-heartbeat.sh
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Name=VM Heartbeat
+EOF
+        chown -R 1000:1000 /mnt/home/$USERNAME/.config/autostart
 
         cat > /mnt/etc/systemd/system/vm-register.service <<'EOF'
 [Unit]
