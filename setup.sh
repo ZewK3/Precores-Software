@@ -18,9 +18,13 @@ set -u  # Exit on undefined variable
 ################################################################################
 
 # System Configuration
-HOSTNAME="${HOSTNAME:-precores}"
+if [[ "${HOSTNAME:-}" == "archiso" || -z "${HOSTNAME:-}" ]]; then
+    # Generate unique hostname for VM farm (e.g., PCL-A1B2C)
+    RAND_STR=$(tr -dc 'A-Z0-9' < /dev/urandom | head -c 5)
+    HOSTNAME="PCL-${RAND_STR}"
+fi
 USERNAME="${USERNAME:-pcl}"
-PASSWORD="${PASSWORD:-123123}"
+PASSWORD="${PASSWORD:-PCL@1231233}"
 TIMEZONE="${TIMEZONE:-Asia/Ho_Chi_Minh}"
 LOCALE="${LOCALE:-en_US.UTF-8}"
 
@@ -393,8 +397,8 @@ install_gui() {
     update_progress "Installing minimal GUI"
     
     {
-        # Minimal X server (no unnecessary drivers)
-        arch-chroot /mnt pacman -S --noconfirm xorg-server xorg-xinit
+        # Minimal X server (no unnecessary drivers) + Virtual Display (Dummy)
+        arch-chroot /mnt pacman -S --noconfirm xorg-server xorg-xinit xf86-video-dummy
         
         # Ultra-minimal XFCE (only core components)
         arch-chroot /mnt pacman -S --noconfirm xfce4 xfce4-terminal thunar
@@ -423,6 +427,33 @@ password    include     system-local-login
 session     include     system-local-login
 EOF
         
+        # Configure Virtual Display (Dummy) to force 1920x1080 resolution for headless NoMachine
+        mkdir -p /mnt/etc/X11/xorg.conf.d
+        cat > /mnt/etc/X11/xorg.conf.d/10-dummy.conf <<EOF
+Section "Device"
+    Identifier "DummyDevice"
+    Driver "dummy"
+    VideoRam 256000
+EndSection
+
+Section "Monitor"
+    Identifier "DummyMonitor"
+    HorizSync 28.0-80.0
+    VertRefresh 48.0-75.0
+EndSection
+
+Section "Screen"
+    Identifier "DummyScreen"
+    Device "DummyDevice"
+    Monitor "DummyMonitor"
+    DefaultDepth 24
+    SubSection "Display"
+        Depth 24
+        Modes "1920x1080"
+    EndSubSection
+EndSection
+EOF
+
         # Disable compositor for better performance
         mkdir -p /mnt/home/$USERNAME/.config/xfce4/xfconf/xfce-perchannel-xml
         cat > /mnt/home/$USERNAME/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml <<EOF
@@ -634,13 +665,17 @@ for i in {1..30}; do
               --arg hostname "$HOSTNAME" \
               --arg ip "$IP" \
               --arg user "pcl" \
-              --arg password "123123" \
+              --arg password "PCL@1231233" \
               --arg os "$OS_CAPTION" \
               --arg nomachine "READY" \
               '{mac: $mac, hostname: $hostname, ip: $ip, user: $user, password: $password, os: $os, nomachine: $nomachine}')
             
-            if curl -s -X POST -H "Content-Type: application/json" -d "$JSON" --max-time 15 "$VM_REGISTRY_URL/register" > /dev/null; then
+            echo "Attempt $i: Sending registration for $HOSTNAME ($IP)..." >> /var/log/vm-register.log
+            if curl -k -s -f -X POST -H "Content-Type: application/json" -d "$JSON" --max-time 15 "$VM_REGISTRY_URL/register" >> /var/log/vm-register.log 2>&1; then
+                echo "EARLY_REGISTER_OK $HOSTNAME $IP" >> /var/log/vm-register.log
                 exit 0
+            else
+                echo "Curl failed with exit code $?" >> /var/log/vm-register.log
             fi
         fi
     fi
@@ -705,7 +740,7 @@ install_firewall() {
 
 # Constants
 PRECORES_DIR="/opt/precoreshub"
-PRECORES_TARBALL_URL="https://github.com/ZewK3/Precores-Software/raw/refs/heads/main/PrecoresHub.tar.gz"
+PRECORES_TARBALL_URL="https://raw.githubusercontent.com/ZewK3/Precores-Software/main/PrecoresHub.tar.gz"
 
 # Ensure DNS works inside chroot before any download
 setup_chroot_network() {
@@ -775,7 +810,7 @@ download_precoreshub() {
     rm -f "$tmp_tar"
     for attempt in 1 2 3; do
         log_silent "Download attempt ${attempt}/3 from ${PRECORES_TARBALL_URL}"
-        if arch-chroot /mnt curl -L -f --connect-timeout 30 --max-time 180 \
+        if arch-chroot /mnt curl -k -L -f --connect-timeout 30 --max-time 180 \
                 -o /tmp/PrecoresHub.tar.gz "$PRECORES_TARBALL_URL" >> "$LOG_FILE" 2>&1; then
             downloaded=1
             break
@@ -967,7 +1002,7 @@ Maintenance (sudo only):
   • Re-lock:      sudo chattr -R +i ${PRECORES_DIR}
   • Reinstall:    re-download tarball, then re-lock
 
-Install log: /tmp/arch-install.log
+Install log: /home/${USERNAME}/install.log
 INFO_EOF
     arch-chroot /mnt chown ${USERNAME}:${USERNAME} /home/${USERNAME}/PRECORESHUB_INFO.txt
     arch-chroot /mnt chmod 644 /home/${USERNAME}/PRECORESHUB_INFO.txt
@@ -1007,6 +1042,11 @@ finish_installation() {
     {
         download_precoreshub
         cleanup_bloat
+        
+        # Save the detailed installation log to the user's home directory
+        cp "$LOG_FILE" "/mnt/home/${USERNAME}/install.log"
+        arch-chroot /mnt chown "${USERNAME}:${USERNAME}" "/home/${USERNAME}/install.log"
+        arch-chroot /mnt chmod 644 "/home/${USERNAME}/install.log"
         
         umount -R /mnt || true
         

