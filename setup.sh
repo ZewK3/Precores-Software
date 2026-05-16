@@ -653,7 +653,7 @@ for i in {1..30}; do
         MAC=$(ip link show dev "$NIC" | awk '/ether/ {print $2}')
         
         if [ -n "$IP" ]; then
-            HOSTNAME=$(hostname)
+            HOSTNAME=$(cat /etc/hostname 2>/dev/null || echo "LinuxVM")
             if [[ "$HOSTNAME" == PCLPCL* ]]; then
                 HOSTNAME="PCL${HOSTNAME:6}"
             fi
