@@ -605,6 +605,8 @@ reg add "HKCU\Control Panel\Desktop" /v TileWallpaper /t REG_SZ /d 0 /f >nul
 reg add "HKCU\Control Panel\Colors" /v Background /t REG_SZ /d "0 0 0" /f >nul
 :: Disable cursor blink
 reg add "HKCU\Control Panel\Desktop" /v CursorBlinkRate /t REG_SZ /d -1 /f >nul
+:: Disable Smooth Scrolling to save massive bandwidth on RustDesk
+reg add "HKCU\Control Panel\Desktop" /v SmoothScroll /t REG_DWORD /d 0 /f >nul
 :: Disable Explorer thumbnails/preview handlers for lower RAM and disk churn
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v DisablePreviewPane /t REG_DWORD /d 1 /f >nul
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v DisableThumbnailCache /t REG_DWORD /d 1 /f >nul
@@ -1039,7 +1041,12 @@ netsh int tcp set global autotuninglevel=normal >nul 2>&1
 netsh int tcp set global rss=enabled >nul 2>&1
 netsh int tcp set global ecncapability=enabled >nul 2>&1
 netsh int tcp set heuristics disabled >nul 2>&1
-echo   - TCP/UDP tuned for remote control
+:: Disable Task Offload to prevent packet drops and latency spikes in Virtual NICs
+netsh int tcp set global taskoffload=disabled >nul 2>&1
+:: Maximize TCP connection limit for heavy automation/farming
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" /v MaxUserPort /t REG_DWORD /d 65534 /f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" /v Tcp1323Opts /t REG_DWORD /d 1 /f >nul
+echo   - TCP/UDP tuned for remote control (MaxUserPort, LSO disabled)
 
 :: ============================================================
 :: VM REGISTRATION (Worker: vm-registry.zewk.workers.dev/register)
@@ -1058,11 +1065,11 @@ echo $ip = ^(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue 
 echo $hostname = $env:COMPUTERNAME
 echo if ^($hostname -like 'PCLPCL*'^) { $hostname = 'PCL' + $hostname.Substring^(6^) }
 echo $rd_id = ''
-echo $paths = @("$env:ProgramFiles\RustDesk\config\RustDesk.toml", "$env:ProgramData\RustDesk\config\RustDesk.toml", "$env:LOCALAPPDATA\RustDesk\config\RustDesk.toml", "C:\Windows\System32\config\systemprofile\AppData\Roaming\RustDesk\config\RustDesk.toml", "C:\Users\PCL\AppData\Roaming\RustDesk\config\RustDesk.toml", "C:\Users\Public\RustDesk\config\RustDesk.toml")
+echo $paths = @("$env:ProgramFiles\RustDesk\config\RustDesk.toml", "$env:ProgramData\RustDesk\config\RustDesk.toml", "$env:LOCALAPPDATA\RustDesk\config\RustDesk.toml", "C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config\RustDesk.toml", "C:\Windows\System32\config\systemprofile\AppData\Roaming\RustDesk\config\RustDesk.toml", "C:\Users\Public\RustDesk\config\RustDesk.toml")
 echo foreach^($p in $paths^) {
 echo     if^(Test-Path $p^) {
 echo         $raw = Get-Content $p -Raw
-echo         $m = $raw -match "id\s*=\s*['""]?([^'""\r\n]+)"
+echo         $m = $raw -match "id\s*=\s*['""]?(\d+)['""]?"
 echo         if^($m^) { $rd_id = $Matches[1].Trim^(^); break }
 echo     }
 echo }
@@ -1102,11 +1109,11 @@ echo if ^($hostname -like 'PCLPCL*'^) { $hostname = 'PCL' + $hostname.Substring^
 echo $ip = ^(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue ^| Where-Object {$_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.*'} ^| Select-Object -First 1^).IPAddress
 echo 
 echo $rd_id = ''
-echo $paths = @("$env:ProgramFiles\RustDesk\config\RustDesk.toml", "$env:ProgramData\RustDesk\config\RustDesk.toml", "$env:LOCALAPPDATA\RustDesk\config\RustDesk.toml", "C:\Windows\System32\config\systemprofile\AppData\Roaming\RustDesk\config\RustDesk.toml", "C:\Users\PCL\AppData\Roaming\RustDesk\config\RustDesk.toml", "C:\Users\Public\RustDesk\config\RustDesk.toml")
+echo $paths = @("$env:ProgramFiles\RustDesk\config\RustDesk.toml", "$env:ProgramData\RustDesk\config\RustDesk.toml", "$env:LOCALAPPDATA\RustDesk\config\RustDesk.toml", "C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config\RustDesk.toml", "C:\Windows\System32\config\systemprofile\AppData\Roaming\RustDesk\config\RustDesk.toml", "C:\Users\Public\RustDesk\config\RustDesk.toml")
 echo foreach^($p in $paths^) {
 echo     if^(Test-Path $p^) {
 echo         $raw = Get-Content $p -Raw
-echo         $m = $raw -match "id\s*=\s*['""]?([^'""\r\n]+)"
+echo         $m = $raw -match "id\s*=\s*['""]?(\d+)['""]?"
 echo         if^($m^) { $rd_id = $Matches[1].Trim^(^); break }
 echo     }
 echo }
