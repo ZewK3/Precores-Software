@@ -40,7 +40,7 @@ LOG_FILE="/tmp/arch-install.log"
 # Progress Bar System with Beautiful UI
 ################################################################################
 
-TOTAL_STEPS=19
+TOTAL_STEPS=21
 CURRENT_STEP=0
 PROGRESS_BAR_WIDTH=56  # Optimized for logo alignment
 
@@ -576,6 +576,102 @@ install_aur_helper() {
 }
 
 ################################################################################
+# Install and Configure NoMachine
+################################################################################
+
+install_nomachine() {
+    update_progress "Installing NoMachine"
+    
+    {
+        echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" | arch-chroot /mnt tee /etc/sudoers.d/temp_nopasswd > /dev/null
+        
+        arch-chroot /mnt bash -c "sudo -u $USERNAME yay -S --noconfirm nomachine"
+        
+        arch-chroot /mnt rm -f /etc/sudoers.d/temp_nopasswd
+        
+        # Optimize NoMachine for headless/VM farm
+        arch-chroot /mnt sed -i 's/^[#]*EnableUPnP.*/EnableUPnP none/' /usr/NX/etc/server.cfg || true
+        arch-chroot /mnt sed -i 's/^[#]*UpdateFrequency.*/UpdateFrequency 0/' /usr/NX/etc/server.cfg || true
+        arch-chroot /mnt sed -i 's/^[#]*AudioInterface.*/AudioInterface disabled/' /usr/NX/etc/node.cfg || true
+        arch-chroot /mnt sed -i 's/^[#]*EnableAudio.*/EnableAudio 0/' /usr/NX/etc/node.cfg || true
+        arch-chroot /mnt sed -i 's/^[#]*EnableUSBSharing.*/EnableUSBSharing 0/' /usr/NX/etc/node.cfg || true
+        
+        arch-chroot /mnt systemctl enable nxserver.service
+        
+    } >> "$LOG_FILE" 2>&1 || show_error "NoMachine installation failed"
+    
+    log_silent "NoMachine installed and optimized"
+}
+
+################################################################################
+# Setup VM Dashboard Registration
+################################################################################
+
+setup_vm_registration() {
+    update_progress "Configuring VM Registration"
+    
+    {
+        cat > /mnt/usr/local/bin/vm-register.sh <<'EOF'
+#!/bin/bash
+VM_REGISTRY_URL="https://vm-registry.zewk.workers.dev"
+
+for i in {1..30}; do
+    NIC=$(ip route show default | awk '/default/ {print $5}' | head -n 1)
+    if [ -n "$NIC" ]; then
+        IP=$(ip -4 addr show dev "$NIC" | awk '/inet/ {print $2}' | cut -d/ -f1 | head -n 1)
+        MAC=$(ip link show dev "$NIC" | awk '/ether/ {print $2}')
+        
+        if [ -n "$IP" ]; then
+            HOSTNAME=$(hostname)
+            if [[ "$HOSTNAME" == PCLPCL* ]]; then
+                HOSTNAME="PCL${HOSTNAME:6}"
+            fi
+            
+            OS_CAPTION=$(grep PRETTY_NAME /etc/os-release | cut -d '"' -f 2 || echo "Arch Linux")
+            
+            JSON=$(jq -n \
+              --arg mac "$MAC" \
+              --arg hostname "$HOSTNAME" \
+              --arg ip "$IP" \
+              --arg user "pcl" \
+              --arg password "123123" \
+              --arg os "$OS_CAPTION" \
+              --arg nomachine "READY" \
+              '{mac: $mac, hostname: $hostname, ip: $ip, user: $user, password: $password, os: $os, nomachine: $nomachine}')
+            
+            if curl -s -X POST -H "Content-Type: application/json" -d "$JSON" --max-time 15 "$VM_REGISTRY_URL/register" > /dev/null; then
+                exit 0
+            fi
+        fi
+    fi
+    sleep 10
+done
+exit 1
+EOF
+        arch-chroot /mnt chmod +x /usr/local/bin/vm-register.sh
+
+        cat > /mnt/etc/systemd/system/vm-register.service <<'EOF'
+[Unit]
+Description=VM Dashboard Registration
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/vm-register.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+        arch-chroot /mnt systemctl enable vm-register.service
+        
+    } >> "$LOG_FILE" 2>&1 || show_error "VM Registration setup failed"
+    
+    log_silent "VM Registration configured"
+}
+
+################################################################################
 # Install Firewall
 ################################################################################
 
@@ -591,6 +687,10 @@ install_firewall() {
             arch-chroot /mnt ufw allow ssh
         fi
         
+        # Open NoMachine port
+        arch-chroot /mnt ufw allow 4000/tcp
+        arch-chroot /mnt ufw allow 4000/udp
+        
         arch-chroot /mnt ufw --force enable
         arch-chroot /mnt systemctl enable ufw
         
@@ -603,238 +703,276 @@ install_firewall() {
 # Download and Install PrecoresHub
 ################################################################################
 
+# Constants
+PRECORES_DIR="/opt/precoreshub"
+PRECORES_TARBALL_URL="https://github.com/ZewK3/Precores-Software/raw/refs/heads/main/PrecoresHub.tar.gz"
+
+# Ensure DNS works inside chroot before any download
+setup_chroot_network() {
+    if [[ ! -s /mnt/etc/resolv.conf ]] || ! grep -q "nameserver" /mnt/etc/resolv.conf 2>/dev/null; then
+        cat > /mnt/etc/resolv.conf <<EOF
+nameserver 1.1.1.1
+nameserver 8.8.8.8
+EOF
+        log_silent "Configured /etc/resolv.conf in chroot (1.1.1.1 / 8.8.8.8)"
+    fi
+}
+
+# Generate a custom SVG icon and register it in the icon theme
+create_app_icon() {
+    mkdir -p /mnt/usr/share/icons/hicolor/scalable/apps
+    mkdir -p /mnt/usr/share/pixmaps
+
+    cat > /mnt/usr/share/icons/hicolor/scalable/apps/precoreshub.svg <<'ICON_EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f172a"/>
+      <stop offset="100%" style="stop-color:#0ea5e9"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#22d3ee"/>
+      <stop offset="100%" style="stop-color:#a78bfa"/>
+    </linearGradient>
+  </defs>
+  <rect x="6" y="6" width="116" height="116" rx="22" fill="url(#bg)"/>
+  <circle cx="64" cy="64" r="40" fill="none" stroke="url(#ring)" stroke-width="6"/>
+  <circle cx="64" cy="64" r="10" fill="#22d3ee"/>
+  <circle cx="64" cy="24" r="6" fill="#a78bfa"/>
+  <circle cx="104" cy="64" r="6" fill="#22d3ee"/>
+  <circle cx="64" cy="104" r="6" fill="#22d3ee"/>
+  <circle cx="24" cy="64" r="6" fill="#a78bfa"/>
+  <line x1="64" y1="34" x2="64" y2="54" stroke="url(#ring)" stroke-width="3"/>
+  <line x1="94" y1="64" x2="74" y2="64" stroke="url(#ring)" stroke-width="3"/>
+  <line x1="64" y1="94" x2="64" y2="74" stroke="url(#ring)" stroke-width="3"/>
+  <line x1="34" y1="64" x2="54" y2="64" stroke="url(#ring)" stroke-width="3"/>
+</svg>
+ICON_EOF
+
+    cp /mnt/usr/share/icons/hicolor/scalable/apps/precoreshub.svg /mnt/usr/share/pixmaps/precoreshub.svg
+    chmod 644 /mnt/usr/share/icons/hicolor/scalable/apps/precoreshub.svg
+    chmod 644 /mnt/usr/share/pixmaps/precoreshub.svg
+
+    arch-chroot /mnt gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
+}
+
 download_precoreshub() {
     update_progress "Installing PrecoresHub"
-    
-    # Ensure curl is installed
-    log_silent "Checking curl availability..."
-    if ! arch-chroot /mnt command -v curl &>/dev/null; then
-        log_silent "Installing curl..."
-        arch-chroot /mnt pacman -S --noconfirm curl >> "$LOG_FILE" 2>&1 || {
-            log_silent "ERROR: Failed to install curl"
+
+    # 1) Network in chroot (critical fix for download failure)
+    setup_chroot_network
+
+    # 2) Ensure required tools (curl/tar/ca-certs/desktop-file-utils for icon registration)
+    log_silent "Ensuring curl/tar/ca-certificates/desktop-file-utils are installed..."
+    arch-chroot /mnt pacman -S --noconfirm --needed curl tar gzip ca-certificates desktop-file-utils >> "$LOG_FILE" 2>&1 || \
+        log_silent "WARNING: pacman -S for prerequisite packages returned non-zero"
+    arch-chroot /mnt update-ca-trust 2>/dev/null || true
+
+    # 3) Download with retries
+    local tmp_tar="/mnt/tmp/PrecoresHub.tar.gz"
+    local downloaded=0
+    rm -f "$tmp_tar"
+    for attempt in 1 2 3; do
+        log_silent "Download attempt ${attempt}/3 from ${PRECORES_TARBALL_URL}"
+        if arch-chroot /mnt curl -L -f --connect-timeout 30 --max-time 180 \
+                -o /tmp/PrecoresHub.tar.gz "$PRECORES_TARBALL_URL" >> "$LOG_FILE" 2>&1; then
+            downloaded=1
+            break
+        fi
+        sleep 3
+    done
+
+    if [[ $downloaded -ne 1 ]] || [[ ! -f "$tmp_tar" ]]; then
+        log_silent "ERROR: PrecoresHub download failed after 3 attempts - Skipping"
+        return 0
+    fi
+
+    local file_size
+    file_size=$(stat -c%s "$tmp_tar" 2>/dev/null || echo "0")
+    if [[ "$file_size" -lt 10000 ]]; then
+        log_silent "ERROR: tarball too small (${file_size} bytes), likely 404 page - Skipping"
+        rm -f "$tmp_tar"
+        return 0
+    fi
+    log_silent "Downloaded successfully (${file_size} bytes)"
+
+    # 4) Extract straight into /opt/precoreshub (system-wide, hidden from $HOME file manager)
+    log_silent "Extracting to ${PRECORES_DIR}..."
+    rm -rf "/mnt${PRECORES_DIR}"
+    mkdir -p "/mnt${PRECORES_DIR}"
+
+    if ! arch-chroot /mnt tar -xzf /tmp/PrecoresHub.tar.gz \
+            --strip-components=1 -C "${PRECORES_DIR}" >> "$LOG_FILE" 2>&1; then
+        log_silent "WARN: --strip-components=1 failed, falling back to plain extract"
+        rm -rf "/mnt${PRECORES_DIR}"
+        mkdir -p /mnt/tmp/_pre_extract
+        if arch-chroot /mnt tar -xzf /tmp/PrecoresHub.tar.gz -C /tmp/_pre_extract >> "$LOG_FILE" 2>&1; then
+            local inner
+            inner=$(ls /mnt/tmp/_pre_extract/ 2>/dev/null | head -1)
+            if [[ -n "$inner" && -d "/mnt/tmp/_pre_extract/$inner" ]]; then
+                mv "/mnt/tmp/_pre_extract/$inner" "/mnt${PRECORES_DIR}"
+            fi
+            rm -rf /mnt/tmp/_pre_extract
+        else
+            log_silent "ERROR: extraction failed completely - Skipping"
+            shred -u "$tmp_tar" 2>/dev/null || rm -f "$tmp_tar"
             return 0
-        }
+        fi
     fi
-    log_silent "curl is available"
-    
-    # Download PrecoresHub.tar.gz
-    log_silent "Downloading PrecoresHub from GitHub..."
-    arch-chroot /mnt bash -c "cd /tmp && curl -L -f -o PrecoresHub.tar.gz https://github.com/ZewK3/Precores-Software/raw/refs/heads/main/PrecoresHub.tar.gz" >> "$LOG_FILE" 2>&1 || {
-        log_silent "ERROR: Failed to download PrecoresHub.tar.gz - Skipping"
-        return 0
-    }
-    
-    if [ ! -f /mnt/tmp/PrecoresHub.tar.gz ]; then
-        log_silent "ERROR: PrecoresHub.tar.gz not found after download - Skipping"
+
+    if [[ ! -f "/mnt${PRECORES_DIR}/PrecoresHub.sh" ]]; then
+        log_silent "ERROR: PrecoresHub.sh not found after extraction - Skipping"
+        ls "/mnt${PRECORES_DIR}" >> "$LOG_FILE" 2>&1
+        rm -rf "/mnt${PRECORES_DIR}"
+        shred -u "$tmp_tar" 2>/dev/null || rm -f "$tmp_tar"
         return 0
     fi
-    
-    # Check file size
-    FILE_SIZE=$(stat -c%s /mnt/tmp/PrecoresHub.tar.gz 2>/dev/null || echo "0")
-    if [ "$FILE_SIZE" -lt 10000 ]; then
-        log_silent "ERROR: Downloaded file too small ($FILE_SIZE bytes) - Skipping"
-        rm -f /mnt/tmp/PrecoresHub.tar.gz
-        return 0
-    fi
-    
-    log_silent "Download successful ($FILE_SIZE bytes)"
-    log_silent "Extracting archive..."
-    
-    # Extract archive
-    arch-chroot /mnt bash -c "cd /tmp && tar -xzf PrecoresHub.tar.gz" >> "$LOG_FILE" 2>&1 || {
-        log_silent "ERROR: Failed to extract archive - Skipping"
-        rm -f /mnt/tmp/PrecoresHub.tar.gz
-        return 0
-    }
-    
-    if [ ! -d /mnt/tmp/PrecoresHub ]; then
-        log_silent "ERROR: PrecoresHub directory not found after extraction - Skipping"
-        rm -f /mnt/tmp/PrecoresHub.tar.gz
-        return 0
-    fi
-    
-    log_silent "Extraction successful"
-    log_silent "Installing to user home directory..."
-    
-    # Install to user home directory
-    arch-chroot /mnt bash -c "cp -r /tmp/PrecoresHub /home/$USERNAME/precoreshub" >> "$LOG_FILE" 2>&1 || {
-        log_silent "ERROR: Failed to copy to home directory - Skipping"
-        rm -rf /mnt/tmp/PrecoresHub /mnt/tmp/PrecoresHub.tar.gz
-        return 0
-    }
-    
-    if [ ! -d /mnt/home/$USERNAME/precoreshub ]; then
-        log_silent "ERROR: Directory not found after copy - Skipping"
-        rm -rf /mnt/tmp/PrecoresHub /mnt/tmp/PrecoresHub.tar.gz
-        return 0
-    fi
-    
-    log_silent "Installation successful"
-    log_silent "Setting permissions (555 - read + execute only)..."
-    
-    {
-        # Set permissions FIRST (while still owned by root in chroot context)
-        # Main script and lib files - read and execute only
-        arch-chroot /mnt bash -c "chmod 555 /home/$USERNAME/precoreshub/PrecoresHub.sh"
-        arch-chroot /mnt bash -c "chmod 555 /home/$USERNAME/precoreshub/lib/*.sh 2>/dev/null || true"
-        
-        # Config and lang files - read only
-        arch-chroot /mnt bash -c "chmod 444 /home/$USERNAME/precoreshub/config/*.json 2>/dev/null || true"
-        arch-chroot /mnt bash -c "chmod 444 /home/$USERNAME/precoreshub/lang/*.json 2>/dev/null || true"
-        
-        # Directories - read and execute only
-        arch-chroot /mnt bash -c "chmod 555 /home/$USERNAME/precoreshub"
-        arch-chroot /mnt bash -c "chmod 555 /home/$USERNAME/precoreshub/lib 2>/dev/null || true"
-        arch-chroot /mnt bash -c "chmod 555 /home/$USERNAME/precoreshub/config 2>/dev/null || true"
-        arch-chroot /mnt bash -c "chmod 555 /home/$USERNAME/precoreshub/lang 2>/dev/null || true"
-        arch-chroot /mnt bash -c "chmod 555 /home/$USERNAME/precoreshub/plugins 2>/dev/null || true"
-        arch-chroot /mnt bash -c "chmod 555 /home/$USERNAME/precoreshub/docs 2>/dev/null || true"
-        
-        # Set ownership to user AFTER setting permissions
-        arch-chroot /mnt bash -c "chown -R $USERNAME:$USERNAME /home/$USERNAME/precoreshub"
-        
-        # Create user config directories with proper ownership
-        arch-chroot /mnt bash -c "mkdir -p /home/$USERNAME/.config/precoreshub"
-        arch-chroot /mnt bash -c "mkdir -p /home/$USERNAME/.cache/precoreshub"
-        arch-chroot /mnt bash -c "mkdir -p /home/$USERNAME/.local/share/precoreshub"
-        arch-chroot /mnt bash -c "chown -R $USERNAME:$USERNAME /home/$USERNAME/.config/precoreshub"
-        arch-chroot /mnt bash -c "chown -R $USERNAME:$USERNAME /home/$USERNAME/.cache/precoreshub"
-        arch-chroot /mnt bash -c "chown -R $USERNAME:$USERNAME /home/$USERNAME/.local/share/precoreshub"
-        
-        # Create skeleton directories (owned by root, will be copied for new users)
-        arch-chroot /mnt bash -c "mkdir -p /etc/skel/.config/precoreshub"
-        arch-chroot /mnt bash -c "mkdir -p /etc/skel/.cache/precoreshub"
-        arch-chroot /mnt bash -c "mkdir -p /etc/skel/.local/share/precoreshub"
-    } >> "$LOG_FILE" 2>&1
-    
-    log_silent "Creating launcher script..."
-    
-    {
-        # Create system-wide launcher script
-        cat > /mnt/usr/local/bin/precoreshub <<'LAUNCHER_EOF'
+
+    # 5) HIDE the tarball: securely shred + remove every leftover trace
+    log_silent "Securely removing source tarball (hiding from user)..."
+    shred -u "$tmp_tar" 2>/dev/null || rm -f "$tmp_tar"
+    rm -rf /mnt/tmp/PrecoresHub /mnt/tmp/_pre_extract /mnt/tmp/PrecoresHub.tar.gz.* 2>/dev/null || true
+
+    # 6) Lock down: root-owned, world read+execute, no write
+    log_silent "Locking down permissions (root-owned, read+execute only)..."
+    arch-chroot /mnt bash -c "
+        chown -R root:root ${PRECORES_DIR}
+        find ${PRECORES_DIR} -type d -exec chmod 755 {} \;
+        find ${PRECORES_DIR} -type f -exec chmod 644 {} \;
+        find ${PRECORES_DIR} -type f -name '*.sh' -exec chmod 755 {} \;
+        chmod 755 ${PRECORES_DIR}/PrecoresHub.sh
+        echo 'PrecoresHub v5.0.0 installed on \$(date)' > ${PRECORES_DIR}/.installed
+        chmod 444 ${PRECORES_DIR}/.installed
+    " >> "$LOG_FILE" 2>&1
+
+    # 7) User-writable runtime dirs (config/cache/data live in $HOME, NOT in /opt)
+    log_silent "Creating user runtime directories..."
+    arch-chroot /mnt bash -c "
+        for d in .config/precoreshub .cache/precoreshub .local/share/precoreshub; do
+            mkdir -p /home/${USERNAME}/\$d /etc/skel/\$d
+            chown ${USERNAME}:${USERNAME} /home/${USERNAME}/\$d
+        done
+    " >> "$LOG_FILE" 2>&1
+
+    # 8) System-wide launcher
+    log_silent "Creating launcher /usr/local/bin/precoreshub..."
+    cat > /mnt/usr/local/bin/precoreshub <<'LAUNCHER_EOF'
 #!/bin/bash
-# PrecoresHub Launcher Script
+# PrecoresHub Launcher
+INSTALL_DIR="/opt/precoreshub"
 
-# Check if running as root
 if [[ $EUID -eq 0 ]]; then
-    echo "Error: Do not run PrecoresHub as root"
-    echo "Please run as a regular user"
+    echo "Error: Do not run PrecoresHub as root."
     exit 1
 fi
 
-# Check dependencies
-if ! command -v fzf &>/dev/null; then
-    echo "Error: fzf is not installed"
-    echo "Please install fzf: sudo pacman -S fzf"
+if [[ ! -d "$INSTALL_DIR" ]] || [[ ! -f "$INSTALL_DIR/PrecoresHub.sh" ]]; then
+    echo "Error: PrecoresHub is not installed at $INSTALL_DIR"
     exit 1
 fi
 
-if ! command -v jq &>/dev/null; then
-    echo "Error: jq is not installed"
-    echo "Please install jq: sudo pacman -S jq"
-    exit 1
+# Auto-install missing runtime deps (one-shot)
+need=()
+command -v fzf >/dev/null 2>&1 || need+=("fzf")
+command -v jq  >/dev/null 2>&1 || need+=("jq")
+if [[ ${#need[@]} -gt 0 ]]; then
+    echo "Installing required dependencies: ${need[*]}"
+    sudo pacman -S --noconfirm --needed "${need[@]}" || {
+        echo "Failed to install: ${need[*]}"
+        exit 1
+    }
 fi
 
-# Set SCRIPT_DIR to user home directory
-export SCRIPT_DIR="$HOME/precoreshub"
-
-# Check if PrecoresHub exists
-if [ ! -d "$SCRIPT_DIR" ]; then
-    echo "Error: PrecoresHub not found at $SCRIPT_DIR"
-    exit 1
-fi
-
-# Change to PrecoresHub directory and run
-cd "$SCRIPT_DIR" && exec bash "$SCRIPT_DIR/PrecoresHub.sh" "$@"
+export SCRIPT_DIR="$INSTALL_DIR"
+cd "$INSTALL_DIR"
+exec bash "$INSTALL_DIR/PrecoresHub.sh" "$@"
 LAUNCHER_EOF
-        arch-chroot /mnt bash -c "chmod 755 /usr/local/bin/precoreshub"
-        
-        # Create desktop entry
-        arch-chroot /mnt bash -c "mkdir -p /usr/share/pixmaps"
-        mkdir -p /mnt/etc/skel/Desktop
-        mkdir -p /mnt/home/$USERNAME/Desktop
-        
-        cat > /mnt/usr/share/applications/precoreshub.desktop <<'DESKTOP_EOF'
+    arch-chroot /mnt chmod 755 /usr/local/bin/precoreshub
+
+    # 9) Application icon
+    log_silent "Installing application icon..."
+    create_app_icon
+
+    # 10) Desktop entry (system menu + user Desktop + skel)
+    log_silent "Creating desktop shortcut..."
+    cat > /mnt/usr/share/applications/precoreshub.desktop <<'DESKTOP_EOF'
 [Desktop Entry]
 Version=1.0
 Type=Application
 Name=PrecoresHub
-Comment=Precores Software Hub - Package Manager
-Exec=xfce4-terminal --geometry=67x25 --title="PrecoresHub" -e "bash -c 'precoreshub; exec bash'"
-Icon=utilities-terminal
+GenericName=Linux Control Center
+Comment=Unified package & system manager for Linux
+Exec=xfce4-terminal --geometry=120x35 --title=PrecoresHub --command="bash -lc 'precoreshub; echo; read -n 1 -s -r -p \"Press any key to close...\"'"
+Icon=precoreshub
 Terminal=false
-Categories=System;PackageManager;
+Categories=System;Settings;PackageManager;
+Keywords=hub;package;install;system;manager;
 StartupNotify=true
+StartupWMClass=PrecoresHub
 DESKTOP_EOF
-        
-        # Copy desktop file to user desktop
-        arch-chroot /mnt bash -c "cp /usr/share/applications/precoreshub.desktop /home/$USERNAME/Desktop/"
-        arch-chroot /mnt bash -c "chmod +x /home/$USERNAME/Desktop/precoreshub.desktop"
-        arch-chroot /mnt bash -c "chown $USERNAME:$USERNAME /home/$USERNAME/Desktop/precoreshub.desktop"
-        
-        # Copy to skeleton
-        arch-chroot /mnt bash -c "cp /usr/share/applications/precoreshub.desktop /etc/skel/Desktop/"
-        arch-chroot /mnt bash -c "chmod +x /etc/skel/Desktop/precoreshub.desktop"
-    } >> "$LOG_FILE" 2>&1
-    
-    log_silent "Verifying installation..."
-    
-    # Verify installation
-    if [ -f /mnt/home/$USERNAME/precoreshub/PrecoresHub.sh ] && [ -x /mnt/home/$USERNAME/precoreshub/PrecoresHub.sh ]; then
-        log_silent "SUCCESS: PrecoresHub installed to ~/precoreshub"
-        
-        {
-            # Create installation marker
-            echo "PrecoresHub v5.0.0 installed on $(date)" > /mnt/home/$USERNAME/precoreshub/.installed
-            arch-chroot /mnt bash -c "chmod 444 /home/$USERNAME/precoreshub/.installed"
-            arch-chroot /mnt bash -c "chown $USERNAME:$USERNAME /home/$USERNAME/precoreshub/.installed"
-            
-            # Create info file
-            cat > /mnt/home/$USERNAME/PRECORESHUB_INFO.txt <<'INFO_EOF'
+    arch-chroot /mnt chmod 644 /usr/share/applications/precoreshub.desktop
+    arch-chroot /mnt update-desktop-database -q 2>/dev/null || true
+
+    arch-chroot /mnt bash -c "
+        mkdir -p /home/${USERNAME}/Desktop /etc/skel/Desktop
+        cp /usr/share/applications/precoreshub.desktop /home/${USERNAME}/Desktop/
+        cp /usr/share/applications/precoreshub.desktop /etc/skel/Desktop/
+        chmod 755 /home/${USERNAME}/Desktop/precoreshub.desktop
+        chmod 755 /etc/skel/Desktop/precoreshub.desktop
+        chown -R ${USERNAME}:${USERNAME} /home/${USERNAME}/Desktop
+    " >> "$LOG_FILE" 2>&1
+
+    # 11) Auto-trust the desktop icon on first login (XFCE/GNOME require gio metadata::trusted)
+    cat > /mnt/etc/profile.d/precoreshub-trust-desktop.sh <<'TRUST_EOF'
+# Auto-trust PrecoresHub desktop icon for current user
+if [[ -f "$HOME/Desktop/precoreshub.desktop" ]]; then
+    chmod +x "$HOME/Desktop/precoreshub.desktop" 2>/dev/null || true
+    if command -v gio >/dev/null 2>&1; then
+        gio set "$HOME/Desktop/precoreshub.desktop" "metadata::trusted" true 2>/dev/null || true
+    fi
+fi
+TRUST_EOF
+    chmod 644 /mnt/etc/profile.d/precoreshub-trust-desktop.sh
+
+    # 12) Immutable attribute - even root cannot edit without `chattr -i`
+    log_silent "Applying immutable attributes (chattr +i)..."
+    arch-chroot /mnt bash -c "find ${PRECORES_DIR} -type f -exec chattr +i {} \\; 2>/dev/null" || true
+
+    # 13) Friendly info file in user $HOME
+    cat > /mnt/home/${USERNAME}/PRECORESHUB_INFO.txt <<INFO_EOF
 ╔══════════════════════════════════════════════════════════╗
 ║              PrecoresHub v5.0.0 Installed                ║
 ╚══════════════════════════════════════════════════════════╝
 
-Installation Location: ~/precoreshub
+How to run:
+  • Terminal:  precoreshub
+  • Desktop:   double-click the PrecoresHub icon
+  • Menu:      Applications -> System -> PrecoresHub
 
-How to Run:
-  1. Open terminal
-  2. Type: precoreshub
-  3. Or click the PrecoresHub icon on Desktop
+Installation directory: ${PRECORES_DIR}
+  • Owner:        root:root
+  • Permissions:  read + execute only for users (no write)
+  • Immutable:    files are locked with chattr +i
+  • Source archive (PrecoresHub.tar.gz) was securely removed
+    after install -- it is no longer present anywhere on disk.
 
-Permissions:
-  • Files: 555 (read + execute only, no write)
-  • This prevents accidental modification
-  • You can still run all commands normally
-
-Troubleshooting:
-  • If command not found: Check /usr/local/bin/precoreshub exists
-  • If permission denied: Check file permissions with ls -la
-  • If fzf error: Install fzf with: sudo pacman -S fzf
-  • If jq error: Install jq with: sudo pacman -S jq
-
-Files:
-  • Main: ~/precoreshub/PrecoresHub.sh
-  • Launcher: /usr/local/bin/precoreshub
-  • Desktop: ~/Desktop/precoreshub.desktop
+User data (the only writable bits):
   • Config: ~/.config/precoreshub/
-  • Cache: ~/.cache/precoreshub/
+  • Cache:  ~/.cache/precoreshub/
+  • Data:   ~/.local/share/precoreshub/
 
-For support, check the log file at:
-  /tmp/arch-install.log (during installation)
+Maintenance (sudo only):
+  • Unlock files: sudo chattr -R -i ${PRECORES_DIR}
+  • Re-lock:      sudo chattr -R +i ${PRECORES_DIR}
+  • Reinstall:    re-download tarball, then re-lock
+
+Install log: /tmp/arch-install.log
 INFO_EOF
-            arch-chroot /mnt bash -c "chown $USERNAME:$USERNAME /home/$USERNAME/PRECORESHUB_INFO.txt"
-        } >> "$LOG_FILE" 2>&1
-    else
-        log_silent "ERROR: Installation verification failed - Skipping"
-        return 0
-    fi
-    
-    # Cleanup
-    log_silent "Cleaning up temporary files..."
-    arch-chroot /mnt bash -c "rm -rf /tmp/PrecoresHub /tmp/PrecoresHub.tar.gz" >> "$LOG_FILE" 2>&1
-    
-    log_silent "PrecoresHub installation complete"
+    arch-chroot /mnt chown ${USERNAME}:${USERNAME} /home/${USERNAME}/PRECORESHUB_INFO.txt
+    arch-chroot /mnt chmod 644 /home/${USERNAME}/PRECORESHUB_INFO.txt
+
+    log_silent "PrecoresHub installation complete at ${PRECORES_DIR}"
 }
 
 ################################################################################
@@ -896,9 +1034,13 @@ finish_installation() {
     echo "  ✓ Unnecessary services disabled"
     echo "  ✓ Bloat packages removed"
     echo "  ✓ Firewall configured"
-    echo "  ✓ PrecoresHub v5.0.0 installed"
+    echo "  ✓ PrecoresHub v5.0.0 installed (locked at /opt/precoreshub)"
+    echo "  ✓ NoMachine installed & optimized"
+    echo "  ✓ VM Dashboard Registration enabled"
     echo ""
-    echo "After first boot, run: ./precoreshub"
+    echo "After first boot:"
+    echo "  • Run from terminal:  precoreshub"
+    echo "  • Or click the PrecoresHub icon on the Desktop"
     echo ""
     echo "System will reboot in 10 seconds..."
     echo ""
@@ -928,6 +1070,8 @@ main() {
     optimize_system
     disable_bloat_services
     install_aur_helper
+    install_nomachine
+    setup_vm_registration
     install_firewall
     finish_installation
 }
