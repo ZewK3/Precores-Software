@@ -288,7 +288,7 @@ if exist "%SystemRoot%\UpdateAssistant" (
 )
 
 :: Disable 60+ unnecessary services (low-RAM dev VM)
-:: RustDesk-only remote control: RDP services are disabled below.
+:: NoMachine remote control: RDP services are disabled below.
 :: KEEP for system: StorSvc, Dhcp, Dnscache, LanmanWorkstation, NlaSvc, EventLog, RpcSs, RpcEptMapper, CryptSvc, Power, BFE, mpssvc, ProfSvc, gpsvc, Schedule, UserManager, LSM, AudioSrv, AudioEndpointBuilder, Themes
 :: IMPORTANT: SysMain is KEPT enabled because Windows Memory Compression depends on it.
 :: Superfetch/Prefetch behavior is already disabled via registry (EnablePrefetcher=0, EnableSuperfetch=0).
@@ -404,7 +404,7 @@ reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProf
 reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" /v Size /t REG_DWORD /d 3 /f >nul
 reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" /v IRPStackSize /t REG_DWORD /d 20 /f >nul
 
-:: Disable Nagle's Algorithm on all interfaces (TCP_NODELAY = instant packet send, useful for RustDesk/real-time control)
+:: Disable Nagle's Algorithm on all interfaces (TCP_NODELAY = instant packet send, useful for NoMachine/real-time control)
 for /f "tokens=*" %%k in ('reg query "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces" /k 2^>nul') do (
     reg add "%%k" /v TcpAckFrequency /t REG_DWORD /d 1 /f >nul 2>&1
     reg add "%%k" /v TCPNoDelay /t REG_DWORD /d 1 /f >nul 2>&1
@@ -575,6 +575,11 @@ for %%R in (
 
 echo   Registry tweaks applied.
 echo   Registry tweaks applied >> "%LOG%"
+
+:: Add Firewall Rules for NoMachine (Port 4000 TCP/UDP)
+netsh advfirewall firewall add rule name="NoMachine TCP" dir=in action=allow protocol=TCP localport=4000 >nul 2>&1
+netsh advfirewall firewall add rule name="NoMachine UDP" dir=in action=allow protocol=UDP localport=4000 >nul 2>&1
+echo   - NoMachine Firewall rules added
 
 :: ============================================================
 :: PHASE 6: VISUAL PERFORMANCE (disable animations/effects)
@@ -1004,9 +1009,9 @@ fsutil behavior set memoryusage 2 >nul 2>&1
 fsutil behavior set disableencryption 1 >nul 2>&1
 echo   - NTFS tuned (8.3 off, last-access off, encryption off, memory level 2)
 
-:: Enable Hardware-Accelerated GPU Scheduling (Win10 2004+, reduces DPC latency for display)
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" /v HwSchMode /t REG_DWORD /d 2 /f >nul
-echo   - Hardware GPU Scheduling enabled
+:: Disable Hardware-Accelerated GPU Scheduling (Causes WARP software rendering lag on headless VMs)
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" /v HwSchMode /t REG_DWORD /d 1 /f >nul
+echo   - Hardware GPU Scheduling disabled for headless VM stability
 
 :: Disable Automatic Maintenance (stops random background defrag/scan/cleanup during work hours)
 reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\Maintenance" /v MaintenanceDisabled /t REG_DWORD /d 1 /f >nul
@@ -1035,7 +1040,7 @@ echo  [10/11] Registering VM...
 echo ============================================================
 echo [10/11] Registering VM... >> "%LOG%"
 
-:: ---- TCP/UDP optimizations (Improves RustDesk / Network performance) ----
+:: ---- TCP/UDP & NIC optimizations (Improves RustDesk / Network performance) ----
 netsh int tcp set global timestamps=enabled >nul 2>&1
 netsh int tcp set global autotuninglevel=normal >nul 2>&1
 netsh int tcp set global rss=enabled >nul 2>&1
@@ -1043,10 +1048,18 @@ netsh int tcp set global ecncapability=enabled >nul 2>&1
 netsh int tcp set heuristics disabled >nul 2>&1
 :: Disable Task Offload to prevent packet drops and latency spikes in Virtual NICs
 netsh int tcp set global taskoffload=disabled >nul 2>&1
+:: Force disable LSO (Large Send Offload) and Checksum Offload on all Virtual Adapters
+powershell -NoProfile -Command "Get-NetAdapter | Disable-NetAdapterChecksumOffload -IpIPv4 -TcpIPv4 -UdpIPv4 -ErrorAction SilentlyContinue; Get-NetAdapter | Disable-NetAdapterLso -IPv4 -IPv6 -ErrorAction SilentlyContinue; Get-NetAdapter | Disable-NetAdapterRsc -IPv4 -IPv6 -ErrorAction SilentlyContinue" >nul 2>&1
 :: Maximize TCP connection limit for heavy automation/farming
 reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" /v MaxUserPort /t REG_DWORD /d 65534 /f >nul
 reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" /v Tcp1323Opts /t REG_DWORD /d 1 /f >nul
-echo   - TCP/UDP tuned for remote control (MaxUserPort, LSO disabled)
+
+:: Disable Mouse Acceleration (Enhance Pointer Precision) to reduce remote control mouse delay
+reg add "HKCU\Control Panel\Mouse" /v MouseSpeed /t REG_SZ /d 0 /f >nul
+reg add "HKCU\Control Panel\Mouse" /v MouseThreshold1 /t REG_SZ /d 0 /f >nul
+reg add "HKCU\Control Panel\Mouse" /v MouseThreshold2 /t REG_SZ /d 0 /f >nul
+
+echo   - TCP/UDP and Mouse tuned for instant remote control
 
 :: ============================================================
 :: VM REGISTRATION (Worker: vm-registry.zewk.workers.dev/register)
@@ -1106,6 +1119,7 @@ echo $url = '%VM_REGISTRY_URL%/heartbeat'
 echo $registerUrl = '%VM_REGISTRY_URL%/register'
 echo $hostname = $env:COMPUTERNAME
 echo if ^($hostname -like 'PCLPCL*'^) { $hostname = 'PCL' + $hostname.Substring^(6^) }
+echo while ^($true^) {
 echo $ip = ^(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue ^| Where-Object {$_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.*'} ^| Select-Object -First 1^).IPAddress
 echo 
 echo $rd_id = ''
@@ -1145,12 +1159,14 @@ echo     Invoke-RestMethod -Uri $url -Method POST -Body $body -ContentType 'appl
 echo } catch {
 echo     try { Invoke-RestMethod -Uri $registerUrl -Method POST -Body $body -ContentType 'application/json' -TimeoutSec 10 ^| Out-Null } catch {}
 echo }
+echo Start-Sleep -Seconds 60
+echo }
 ) > "%HB_SCRIPT%"
 attrib +h +s "%PCL_DIR%" "%HB_SCRIPT%" >nul 2>&1
 
-:: Register Scheduled Task to run heartbeat every 1 minute (Interactive to capture screen)
+:: Register Scheduled Task to run heartbeat continuously on logon
 schtasks /Delete /TN "VM_Heartbeat" /F >nul 2>&1
-schtasks /Create /TN "VM_Heartbeat" /SC MINUTE /MO 1 /TR "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File %HB_SCRIPT%" /RU "PCL" /IT /RL HIGHEST /F >> "%LOG%" 2>&1
+schtasks /Create /TN "VM_Heartbeat" /SC ONLOGON /TR "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""%HB_SCRIPT%""" /RU "PCL" /IT /RL HIGHEST /F >> "%LOG%" 2>&1
 :: Run it once immediately
 schtasks /Run /TN "VM_Heartbeat" >> "%LOG%" 2>&1
 echo   - Heartbeat + Monitoring scheduled (every 1 min)

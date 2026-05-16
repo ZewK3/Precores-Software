@@ -58,8 +58,11 @@ set "TELEGRAM_URL=SKIP"
 :: --- Vietnamese Input ---
 set "UNIKEY_URL=https://www.unikey.org/assets/release/unikey46RC2-230919-win64.zip"
 
-:: --- RustDesk Remote Control ---
-set "RUSTDESK_URL=https://github.com/rustdesk/rustdesk/releases/download/1.4.6/rustdesk-1.4.6-x86_64.exe"
+:: --- NoMachine Remote Control ---
+set "NOMACHINE_URL=https://download.nomachine.com/download/8.14/Windows/nomachine_8.14.2_1_x64.exe"
+
+:: --- Virtual Display (For GPU Passthrough) ---
+set "VIRTUAL_DISPLAY_URL=https://www.amyuni.com/downloads/usbmmidd_v2.zip"
 
 :: --- Virtualization (auto-detect) ---
 set "VIRTIO_URL=https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/latest-virtio/virtio-win-guest-tools.exe"
@@ -88,53 +91,53 @@ echo ---- Starting installations ----
 echo.
 
 :: --- Chrome ---
-call :install_app "1/12" "Google Chrome" "%CHROME_URL%" "chrome.msi" "msi" "%ProgramFiles%\Google\Chrome\Application\chrome.exe" "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"
+call :install_app "1/13" "Google Chrome" "%CHROME_URL%" "chrome.msi" "msi" "%ProgramFiles%\Google\Chrome\Application\chrome.exe" "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"
 
 :: --- Node.js ---
-call :install_app "2/12" "Node.js" "%NODE_URL%" "nodejs.msi" "msi" "%ProgramFiles%\nodejs\node.exe" "%ProgramFiles(x86)%\nodejs\node.exe"
+call :install_app "2/13" "Node.js" "%NODE_URL%" "nodejs.msi" "msi" "%ProgramFiles%\nodejs\node.exe" "%ProgramFiles(x86)%\nodejs\node.exe"
 
 :: --- Git ---
-call :install_app "3/12" "Git" "%GIT_URL%" "git.exe" "inno" "%ProgramFiles%\Git\cmd\git.exe" "%ProgramFiles(x86)%\Git\cmd\git.exe"
+call :install_app "3/13" "Git" "%GIT_URL%" "git.exe" "inno" "%ProgramFiles%\Git\cmd\git.exe" "%ProgramFiles(x86)%\Git\cmd\git.exe"
 
 :: --- VS Code ---
-call :install_app "4/12" "VS Code" "%VSCODE_URL%" "vscode.exe" "inno_vscode" "%ProgramFiles%\Microsoft VS Code\Code.exe" "%LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe"
+call :install_app "4/13" "VS Code" "%VSCODE_URL%" "vscode.exe" "inno_vscode" "%ProgramFiles%\Microsoft VS Code\Code.exe" "%LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe"
 
 :: --- 7-Zip ---
-call :install_app "5/12" "7-Zip" "%SEVENZIP_URL%" "7zip.exe" "nsis" "%ProgramFiles%\7-Zip\7z.exe" "%ProgramFiles(x86)%\7-Zip\7z.exe"
+call :install_app "5/13" "7-Zip" "%SEVENZIP_URL%" "7zip.exe" "nsis" "%ProgramFiles%\7-Zip\7z.exe" "%ProgramFiles(x86)%\7-Zip\7z.exe"
 
 :: --- Notepad++ ---
-call :install_app "6/12" "Notepad++" "%NOTEPADPP_URL%" "npp.exe" "nsis" "%ProgramFiles%\Notepad++\notepad++.exe" "%ProgramFiles(x86)%\Notepad++\notepad++.exe"
+call :install_app "6/13" "Notepad++" "%NOTEPADPP_URL%" "npp.exe" "nsis" "%ProgramFiles%\Notepad++\notepad++.exe" "%ProgramFiles(x86)%\Notepad++\notepad++.exe"
 
 :: --- Telegram ---
-call :install_app "7/12" "Telegram" "%TELEGRAM_URL%" "telegram.exe" "inno" "%ProgramFiles%\Telegram Desktop\Telegram.exe" "%LOCALAPPDATA%\Telegram Desktop\Telegram.exe"
+call :install_app "7/13" "Telegram" "%TELEGRAM_URL%" "telegram.exe" "inno" "%ProgramFiles%\Telegram Desktop\Telegram.exe" "%LOCALAPPDATA%\Telegram Desktop\Telegram.exe"
 
 :: --- VC++ Redistributable ---
 if /i "%VCREDIST_URL%"=="SKIP" (
-    echo [8/12] VC++ Redist: SKIPPED
-    echo [8/12] VC++ Redist: SKIPPED >> "%LOG%"
+    echo [8/13] VC++ Redist: SKIPPED
+    echo [8/13] VC++ Redist: SKIPPED >> "%LOG%"
     set /a TOTAL_SKIP+=1
 ) else (
     set "VCR_KEY=HKLM\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
     reg query "!VCR_KEY!" /v Installed >nul 2>&1
     if !errorlevel! equ 0 (
-        echo [8/12] VC++ Redist: already installed, skipping.
-        echo [8/12] VC++ Redist: ALREADY INSTALLED >> "%LOG%"
+        echo [8/13] VC++ Redist: already installed, skipping.
+        echo [8/13] VC++ Redist: ALREADY INSTALLED >> "%LOG%"
         set /a TOTAL_SKIP+=1
     ) else (
-        echo [8/12] Installing VC++ Redistributable...
-        echo [8/12] Downloading VC++ Redist... >> "%LOG%"
+        echo [8/13] Installing VC++ Redistributable...
+        echo [8/13] Downloading VC++ Redist... >> "%LOG%"
         %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%VCREDIST_URL%' -OutFile '%DL_DIR%\vcredist.exe' -UseBasicParsing"
         if exist "%DL_DIR%\vcredist.exe" (
-            echo [8/12] Installing VC++ Redist... >> "%LOG%"
+            echo [8/13] Installing VC++ Redist... >> "%LOG%"
             start /wait "" "%DL_DIR%\vcredist.exe" /install /quiet /norestart
             set "EXIT_CODE=!errorlevel!"
-            echo [8/12] VC++ Redist exit code: !EXIT_CODE! >> "%LOG%"
+            echo [8/13] VC++ Redist exit code: !EXIT_CODE! >> "%LOG%"
             del /f /q "%DL_DIR%\vcredist.exe" >nul 2>&1
             if !EXIT_CODE! equ 0 (set /a TOTAL_OK+=1) else (set /a TOTAL_FAIL+=1)
             echo        Done.
         ) else (
             echo        ERROR: download failed.
-            echo [8/12] VC++ Redist: DOWNLOAD FAILED >> "%LOG%"
+            echo [8/13] VC++ Redist: DOWNLOAD FAILED >> "%LOG%"
             set /a TOTAL_FAIL+=1
         )
     )
@@ -142,23 +145,23 @@ if /i "%VCREDIST_URL%"=="SKIP" (
 
 :: --- .NET Runtime ---
 if /i "%DOTNET_URL%"=="SKIP" (
-    echo [9/12] .NET Runtime: SKIPPED
-    echo [9/12] .NET Runtime: SKIPPED >> "%LOG%"
+    echo [9/13] .NET Runtime: SKIPPED
+    echo [9/13] .NET Runtime: SKIPPED >> "%LOG%"
     set /a TOTAL_SKIP+=1
 ) else (
-    echo [9/12] Installing .NET Runtime...
-    echo [9/12] Downloading .NET Runtime... >> "%LOG%"
+    echo [9/13] Installing .NET Runtime...
+    echo [9/13] Downloading .NET Runtime... >> "%LOG%"
     %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%DOTNET_URL%' -OutFile '%DL_DIR%\dotnet.exe' -UseBasicParsing"
     if exist "%DL_DIR%\dotnet.exe" (
         start /wait "" "%DL_DIR%\dotnet.exe" /install /quiet /norestart
         set "EXIT_CODE=!errorlevel!"
-        echo [9/12] .NET exit code: !EXIT_CODE! >> "%LOG%"
+        echo [9/13] .NET exit code: !EXIT_CODE! >> "%LOG%"
         del /f /q "%DL_DIR%\dotnet.exe" >nul 2>&1
         if !EXIT_CODE! equ 0 (set /a TOTAL_OK+=1) else (set /a TOTAL_FAIL+=1)
         echo        Done.
     ) else (
         echo        ERROR: download failed.
-        echo [9/12] .NET: DOWNLOAD FAILED >> "%LOG%"
+        echo [9/13] .NET: DOWNLOAD FAILED >> "%LOG%"
         set /a TOTAL_FAIL+=1
     )
 )
@@ -168,26 +171,26 @@ set "IS_QEMU=0"
 set "IS_VMWARE=0"
 for /f "tokens=*" %%M in ('wmic computersystem get manufacturer /value 2^>nul ^| findstr /i "QEMU"') do set "IS_QEMU=1"
 for /f "tokens=*" %%M in ('wmic computersystem get manufacturer /value 2^>nul ^| findstr /i "VMware"') do set "IS_VMWARE=1"
-echo [10/12] Detection: QEMU=%IS_QEMU% VMware=%IS_VMWARE% >> "%LOG%"
+echo [10/13] Detection: QEMU=%IS_QEMU% VMware=%IS_VMWARE% >> "%LOG%"
 
 if "%IS_QEMU%"=="1" (
     if exist "%ProgramFiles%\Virtio-Win\" (
-        echo [10/12] VirtIO Guest Tools: already installed, skipping.
-        echo [10/12] VirtIO: ALREADY INSTALLED >> "%LOG%"
+        echo [10/13] VirtIO Guest Tools: already installed, skipping.
+        echo [10/13] VirtIO: ALREADY INSTALLED >> "%LOG%"
         set /a TOTAL_SKIP+=1
     ) else (
-        echo [10/12] Installing VirtIO Guest Tools ^(Proxmox/QEMU detected^)...
-        echo [10/12] Downloading VirtIO... >> "%LOG%"
+        echo [10/13] Installing VirtIO Guest Tools ^(Proxmox/QEMU detected^)...
+        echo [10/13] Downloading VirtIO... >> "%LOG%"
         %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%VIRTIO_URL%' -OutFile '%DL_DIR%\virtio-win-guest-tools.exe' -UseBasicParsing"
         if exist "%DL_DIR%\virtio-win-guest-tools.exe" (
             start /wait "" "%DL_DIR%\virtio-win-guest-tools.exe" /install /quiet /norestart
             set "EXIT_CODE=!errorlevel!"
-            echo [10/12] VirtIO exit code: !EXIT_CODE! >> "%LOG%"
+            echo [10/13] VirtIO exit code: !EXIT_CODE! >> "%LOG%"
             del /f /q "%DL_DIR%\virtio-win-guest-tools.exe" >nul 2>&1
             if !EXIT_CODE! equ 0 (
                 set /a TOTAL_OK+=1
             ) else if !EXIT_CODE! equ 3010 (
-                echo [10/12] VirtIO: OK - reboot required >> "%LOG%"
+                echo [10/13] VirtIO: OK - reboot required >> "%LOG%"
                 set /a TOTAL_OK+=1
             ) else (
                 set /a TOTAL_FAIL+=1
@@ -195,28 +198,28 @@ if "%IS_QEMU%"=="1" (
             echo        Done.
         ) else (
             echo        ERROR: download failed.
-            echo [10/12] VirtIO: DOWNLOAD FAILED >> "%LOG%"
+            echo [10/13] VirtIO: DOWNLOAD FAILED >> "%LOG%"
             set /a TOTAL_FAIL+=1
         )
     )
 ) else if "%IS_VMWARE%"=="1" (
     if exist "%ProgramFiles%\VMware\VMware Tools\vmtoolsd.exe" (
-        echo [10/12] VMware Tools: already installed, skipping.
-        echo [10/12] VMware Tools: ALREADY INSTALLED >> "%LOG%"
+        echo [10/13] VMware Tools: already installed, skipping.
+        echo [10/13] VMware Tools: ALREADY INSTALLED >> "%LOG%"
         set /a TOTAL_SKIP+=1
     ) else (
-        echo [10/12] Installing VMware Tools ^(VMware detected^)...
-        echo [10/12] Downloading VMware Tools... >> "%LOG%"
+        echo [10/13] Installing VMware Tools ^(VMware detected^)...
+        echo [10/13] Downloading VMware Tools... >> "%LOG%"
         %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%VMTOOLS_URL%' -OutFile '%DL_DIR%\vmtools.exe' -UseBasicParsing"
         if exist "%DL_DIR%\vmtools.exe" (
             start /wait "" "%DL_DIR%\vmtools.exe" /S /v"/qn REBOOT=R"
             set "EXIT_CODE=!errorlevel!"
-            echo [10/12] VMware Tools exit code: !EXIT_CODE! >> "%LOG%"
+            echo [10/13] VMware Tools exit code: !EXIT_CODE! >> "%LOG%"
             del /f /q "%DL_DIR%\vmtools.exe" >nul 2>&1
             if !EXIT_CODE! equ 0 (
                 set /a TOTAL_OK+=1
             ) else if !EXIT_CODE! equ 3010 (
-                echo [10/12] VMware Tools: OK - reboot required >> "%LOG%"
+                echo [10/13] VMware Tools: OK - reboot required >> "%LOG%"
                 set /a TOTAL_OK+=1
             ) else (
                 set /a TOTAL_FAIL+=1
@@ -224,24 +227,63 @@ if "%IS_QEMU%"=="1" (
             echo        Done.
         ) else (
             echo        ERROR: download failed.
-            echo [10/12] VMware Tools: DOWNLOAD FAILED >> "%LOG%"
+            echo [10/13] VMware Tools: DOWNLOAD FAILED >> "%LOG%"
             set /a TOTAL_FAIL+=1
         )
     )
 ) else (
-    echo [10/12] VM Tools: SKIPPED ^(physical machine^)
-    echo [10/12] VM Tools: SKIPPED (physical) >> "%LOG%"
+    echo [10/13] VM Tools: SKIPPED ^(physical machine^)
+    echo [10/13] VM Tools: SKIPPED (physical) >> "%LOG%"
     set /a TOTAL_SKIP+=1
 )
 
-:: --- RustDesk ---
-call :install_app "11/12" "RustDesk" "%RUSTDESK_URL%" "rustdesk.exe" "rustdesk" "%ProgramFiles%\RustDesk\rustdesk.exe" "%ProgramFiles(x86)%\RustDesk\rustdesk.exe"
-call :configure_rustdesk
+:: --- Virtual Display (Amyuni USBMMIDD) ---
+if /i "%VIRTUAL_DISPLAY_URL%"=="SKIP" (
+    echo [11/13] Virtual Display: SKIPPED
+    echo [11/13] Virtual Display: SKIPPED >> "%LOG%"
+    set /a TOTAL_SKIP+=1
+) else (
+    if exist "%ProgramFiles%\VirtualDisplay\deviceinstaller64.exe" (
+        echo [11/13] Virtual Display: already installed, skipping.
+        echo [11/13] Virtual Display: ALREADY INSTALLED >> "%LOG%"
+        set /a TOTAL_SKIP+=1
+    ) else (
+        echo [11/13] Installing Virtual Display Driver...
+        echo [11/13] Downloading Virtual Display Driver... >> "%LOG%"
+        if not exist "%ProgramFiles%\VirtualDisplay" mkdir "%ProgramFiles%\VirtualDisplay" >nul 2>&1
+        %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%VIRTUAL_DISPLAY_URL%' -OutFile '%DL_DIR%\usbmmidd.zip' -UseBasicParsing"
+        if exist "%DL_DIR%\usbmmidd.zip" (
+            powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -LiteralPath '%DL_DIR%\usbmmidd.zip' -DestinationPath '%ProgramFiles%\VirtualDisplay' -Force" >nul 2>&1
+            del /f /q "%DL_DIR%\usbmmidd.zip" >nul 2>&1
+            if exist "%ProgramFiles%\VirtualDisplay\deviceinstaller64.exe" (
+                pushd "%ProgramFiles%\VirtualDisplay"
+                deviceinstaller64.exe install usbmmidd.inf usbmmidd >nul 2>&1
+                deviceinstaller64.exe enableidd 1 >nul 2>&1
+                popd
+                echo        Done. Virtual Display enabled.
+                echo [11/13] Virtual Display: OK >> "%LOG%"
+                set /a TOTAL_OK+=1
+            ) else (
+                echo        WARNING: deviceinstaller64.exe not found after extract.
+                echo [11/13] Virtual Display: EXTRACT FAILED >> "%LOG%"
+                set /a TOTAL_FAIL+=1
+            )
+        ) else (
+            echo        ERROR: Download failed.
+            echo [11/13] Virtual Display: DOWNLOAD FAILED >> "%LOG%"
+            set /a TOTAL_FAIL+=1
+        )
+    )
+)
+
+:: --- NoMachine ---
+call :install_app "12/13" "NoMachine" "%NOMACHINE_URL%" "nomachine.exe" "nomachine" "%ProgramFiles%\NoMachine\bin\nxserver.exe" "%ProgramFiles(x86)%\NoMachine\bin\nxserver.exe"
+call :configure_nomachine
 
 :: --- UniKey ---
 if /i "%UNIKEY_URL%"=="SKIP" (
-    echo [12/12] UniKey: SKIPPED
-    echo [12/12] UniKey: SKIPPED >> "%LOG%"
+    echo [13/13] UniKey: SKIPPED
+    echo [13/13] UniKey: SKIPPED >> "%LOG%"
     set /a TOTAL_SKIP+=1
 ) else (
     set "UNIKEY_ROOT=%ProgramFiles%\UniKey"
@@ -250,12 +292,12 @@ if /i "%UNIKEY_URL%"=="SKIP" (
         for /r "!UNIKEY_ROOT!" %%F in (UniKeyNT.exe) do if not defined EXISTING_EXE set "EXISTING_EXE=%%F"
     )
     if defined EXISTING_EXE (
-        echo [12/12] UniKey: already installed, skipping.
-        echo [12/12] UniKey: ALREADY INSTALLED >> "%LOG%"
+        echo [13/13] UniKey: already installed, skipping.
+        echo [13/13] UniKey: ALREADY INSTALLED >> "%LOG%"
         set /a TOTAL_SKIP+=1
     ) else (
-        echo [12/12] Installing UniKey...
-        echo [12/12] Downloading UniKey... >> "%LOG%"
+        echo [13/13] Installing UniKey...
+        echo [13/13] Downloading UniKey... >> "%LOG%"
         if not exist "!UNIKEY_ROOT!" mkdir "!UNIKEY_ROOT!" >nul 2>&1
         %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%UNIKEY_URL%' -OutFile '%DL_DIR%\unikey.zip' -UseBasicParsing -UserAgent 'Mozilla/5.0'"
         if exist "%DL_DIR%\unikey.zip" (
@@ -276,16 +318,16 @@ if /i "%UNIKEY_URL%"=="SKIP" (
                 powershell -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('CommonStartup')+'\UniKey.lnk');$s.TargetPath='!UNIKEY_ROOT!\UniKeyNT.exe';$s.WorkingDirectory='!UNIKEY_ROOT!';$s.Save()" >nul 2>&1
                 start "" "!UNIKEY_ROOT!\UniKeyNT.exe"
                 echo        Done. UniKey installed to "!UNIKEY_ROOT!".
-                echo [12/12] UniKey: OK >> "%LOG%"
+                echo [13/13] UniKey: OK >> "%LOG%"
                 set /a TOTAL_OK+=1
             ) else (
                 echo        WARNING: UniKeyNT.exe not found after extract.
-                echo [12/12] UniKey: EXTRACT FAILED - UniKeyNT.exe not found >> "%LOG%"
+                echo [13/13] UniKey: EXTRACT FAILED - UniKeyNT.exe not found >> "%LOG%"
                 set /a TOTAL_FAIL+=1
             )
         ) else (
             echo        ERROR: Download failed.
-            echo [12/12] UniKey: DOWNLOAD FAILED >> "%LOG%"
+            echo [13/13] UniKey: DOWNLOAD FAILED >> "%LOG%"
             set /a TOTAL_FAIL+=1
         )
     )
@@ -377,8 +419,8 @@ if "!_TYPE!"=="msi" (
     start /wait "" "%DL_DIR%\!_FILE!" /VERYSILENT /NORESTART /MERGETASKS=!runcode,addcontextmenufiles,addcontextmenufolders,addtopath
 ) else if "!_TYPE!"=="nsis" (
     start /wait "" "%DL_DIR%\!_FILE!" /S
-) else if "!_TYPE!"=="rustdesk" (
-    start /wait "" "%DL_DIR%\!_FILE!" --silent-install
+) else if "!_TYPE!"=="nomachine" (
+    start /wait "" "%DL_DIR%\!_FILE!" /VERYSILENT /NORESTART /SUPPRESSMSGBOXES
     timeout /t 5 /nobreak >nul
 )
 
@@ -398,74 +440,48 @@ if !EXIT_CODE! equ 0 (
 exit /b 0
 
 :: ============================================================
-:: SUBROUTINE: configure_rustdesk
-:: Set unattended password, read RustDesk ID, and publish VM to dashboard.
+:: SUBROUTINE: configure_nomachine
+:: Optimize NoMachine config and publish VM to dashboard.
 :: ============================================================
-:configure_rustdesk
-echo [11/12] RustDesk: configuring unattended access...
-echo [11/12] RustDesk: configuring unattended access >> "%LOG%"
+:configure_nomachine
+echo [12/13] NoMachine: configuring unattended access and optimizing...
+echo [12/13] NoMachine: configuring unattended access and optimizing >> "%LOG%"
+
+set "NM_CFG_DIR=%ProgramFiles%\NoMachine\etc"
+if not exist "%NM_CFG_DIR%\server.cfg" set "NM_CFG_DIR=%ProgramFiles(x86)%\NoMachine\etc"
+
+if exist "!NM_CFG_DIR!\server.cfg" (
+    echo [*] Applying NoMachine optimizations for VM Farm... >> "%LOG%"
+    :: Disable UPnP (faster startup, no router port mapping)
+    :: Disable Auto-Updates (prevents popups)
+    powershell -NoProfile -Command "$f='!NM_CFG_DIR!\server.cfg'; (Get-Content $f) -replace '(?i)^#?EnableUPnP\b.*', 'EnableUPnP none' -replace '(?i)^#?UpdateFrequency\b.*', 'UpdateFrequency 0' | Set-Content $f"
+    
+    :: Disable Audio injection (saves bandwidth)
+    :: Disable USB sharing (saves CPU and driver load)
+    powershell -NoProfile -Command "$f='!NM_CFG_DIR!\node.cfg'; (Get-Content $f) -replace '(?i)^#?AudioInterface\b.*', 'AudioInterface disabled' -replace '(?i)^#?EnableAudio\b.*', 'EnableAudio 0' -replace '(?i)^#?EnableUSBSharing\b.*', 'EnableUSBSharing 0' | Set-Content $f"
+
+    :: Restart NoMachine services to apply changes
+    net stop nxserver >nul 2>&1
+    net start nxserver >nul 2>&1
+)
 
 set "VM_REGISTRY_URL=https://vm-registry.zewk.workers.dev"
-set "RUSTDESK_PASSWORD=PCL@1231233"
-set "PS_RD=%TEMP%\rustdesk_register.ps1"
+set "PS_NM=%TEMP%\nomachine_register.ps1"
 (
 echo $ProgressPreference = 'SilentlyContinue'
 echo [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-echo $exe = @^('C:\Program Files\RustDesk\rustdesk.exe','C:\Program Files ^(x86^)\RustDesk\rustdesk.exe'^) ^| Where-Object { Test-Path $_ } ^| Select-Object -First 1
-echo if ^(-not $exe^) { Write-Output 'RUSTDESK_EXE_NOT_FOUND'; exit 1 }
-echo try {
-echo     $svc = Get-Service -Name 'Rustdesk' -ErrorAction SilentlyContinue
-echo     if ^(-not $svc^) { ^& $exe --install-service ^| Out-Null; Start-Sleep -Seconds 10; $svc = Get-Service -Name 'Rustdesk' -ErrorAction SilentlyContinue }
-echo     if ^($svc -and $svc.Status -ne 'Running'^) { Start-Service -Name $svc.Name -ErrorAction SilentlyContinue; Start-Sleep -Seconds 5 }
-echo } catch { Write-Output ^('RUSTDESK_SERVICE_WARN ' + $_.Exception.Message^) }
-echo try {
-echo     ^& $exe --password '%RUSTDESK_PASSWORD%' ^| Out-Null
-echo     Write-Output 'RUSTDESK_PASSWORD_OK'
-echo } catch {
-echo     Write-Output ^('RUSTDESK_PASSWORD_ERROR ' + $_.Exception.Message^)
-echo }
-echo $rd_id = ''
-echo function Get-RustDeskId {
-echo     try {
-echo         $cmdOut = ^(cmd.exe /d /s /c "`"$exe`" --get-id ^| more" 2^>$null^)
-echo         foreach ^($line in $cmdOut^) {
-echo             $clean = $line.Trim^(^)
-echo             if ^($clean -match '^\d+$'^) { return $clean }
-echo         }
-echo     } catch {}
-echo     $paths = @^(
-echo         "$env:ProgramFiles\RustDesk\config\RustDesk.toml",
-echo         "$env:ProgramData\RustDesk\config\RustDesk.toml",
-echo         "$env:LOCALAPPDATA\RustDesk\config\RustDesk.toml",
-echo         "C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config\RustDesk.toml",
-echo         "C:\Windows\System32\config\systemprofile\AppData\Roaming\RustDesk\config\RustDesk.toml",
-echo         "C:\Users\Public\RustDesk\config\RustDesk.toml"
-echo     ^)
-echo     foreach ^($p in $paths^) {
-echo         if ^(Test-Path $p^) {
-echo             $raw = Get-Content $p -Raw
-echo             if ^($raw -match "id\s*=\s*['""]?(\d+)['""]?"^) { return $Matches[1].Trim^(^) }
-echo         }
-echo     }
-echo     return ''
-echo }
-echo for ^($i = 1; $i -le 30; $i++^) {
-echo     $rd_id = Get-RustDeskId
-echo     if ^($rd_id^) { break }
-echo     Start-Sleep -Seconds 5
-echo }
-echo if ^(-not $rd_id^) { Write-Output 'RUSTDESK_ID_NOT_READY'; exit 1 }
+
 echo $nic = Get-CimInstance Win32_NetworkAdapter -Filter 'NetEnabled=True AND PhysicalAdapter=True' ^| Select-Object -First 1
 echo $mac = if ^($nic^) { $nic.MACAddress } else { '' }
 echo $ip = ^(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue ^| Where-Object {$_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.*'} ^| Select-Object -First 1^).IPAddress
 echo $hostname = $env:COMPUTERNAME
 echo if ^($hostname -like 'PCLPCL*'^) { $hostname = 'PCL' + $hostname.Substring^(6^) }
-echo $body = @{ mac = $mac; hostname = $hostname; ip = $ip; rustdesk = $rd_id; user = 'PCL'; password = '%RUSTDESK_PASSWORD%'; os = ^(Get-CimInstance Win32_OperatingSystem^).Caption } ^| ConvertTo-Json -Depth 3
-echo try { Invoke-RestMethod -Uri '%VM_REGISTRY_URL%/register' -Method POST -Body $body -ContentType 'application/json' -TimeoutSec 15 ^| Out-Null; Write-Output ^('RUSTDESK_REGISTER_OK ' + $hostname + ' ' + $rd_id^) } catch { Write-Output ^('RUSTDESK_REGISTER_ERROR ' + $_.Exception.Message^); exit 1 }
-) > "%PS_RD%"
+echo $body = @{ mac = $mac; hostname = $hostname; ip = $ip; nomachine = 'READY'; user = 'PCL'; password = 'PCL@1231233'; os = ^(Get-CimInstance Win32_OperatingSystem^).Caption } ^| ConvertTo-Json -Depth 3
+echo try { Invoke-RestMethod -Uri '%VM_REGISTRY_URL%/register' -Method POST -Body $body -ContentType 'application/json' -TimeoutSec 15 ^| Out-Null; Write-Output ^('NOMACHINE_REGISTER_OK ' + $hostname + ' ' + $ip^) } catch { Write-Output ^('NOMACHINE_REGISTER_ERROR ' + $_.Exception.Message^); exit 1 }
+) > "%PS_NM%"
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_RD%" >> "%LOG%" 2>&1
-del /f /q "%PS_RD%" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_NM%" >> "%LOG%" 2>&1
+del /f /q "%PS_NM%" >nul 2>&1
 exit /b 0
 
 :: ============================================================
