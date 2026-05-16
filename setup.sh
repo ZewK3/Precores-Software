@@ -621,11 +621,11 @@ install_nomachine() {
     update_progress "Installing NoMachine"
     
     {
-        echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" | arch-chroot /mnt tee /etc/sudoers.d/temp_nopasswd > /dev/null
-        
-        arch-chroot /mnt bash -c "sudo -u $USERNAME yay -S --noconfirm nomachine"
-        
-        arch-chroot /mnt rm -f /etc/sudoers.d/temp_nopasswd
+        # Download and install NoMachine directly instead of using AUR
+        arch-chroot /mnt bash -c "cd /tmp && \
+            wget -q -O nomachine.tar.gz \"https://download.nomachine.com/download/8.14/Linux/nomachine_8.14.2_1_x86_64.tar.gz\" && \
+            tar zxf nomachine.tar.gz && \
+            cd NX && ./nxserver --install"
         
         # Optimize NoMachine for headless/VM farm
         arch-chroot /mnt sed -i 's/^[#]*EnableUPnP.*/EnableUPnP none/' /usr/NX/etc/server.cfg || true
