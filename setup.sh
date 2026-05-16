@@ -623,7 +623,7 @@ install_nomachine() {
     {
         # Download and install NoMachine directly instead of using AUR
         arch-chroot /mnt bash -c "cd /tmp && \
-            wget -q -O nomachine.tar.gz \"https://download.nomachine.com/download/8.14/Linux/nomachine_8.14.2_1_x86_64.tar.gz\" && \
+            wget -q -O nomachine.tar.gz \"https://download.nomachine.com/download/9.5/Linux/nomachine_9.5.7_2_x86_64.tar.gz\" && \
             tar zxf nomachine.tar.gz && \
             cd NX && ./nxserver --install"
         
