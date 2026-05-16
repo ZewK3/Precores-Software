@@ -378,6 +378,7 @@ install_network() {
         
         if [[ "$INSTALL_SSH" == "true" ]]; then
             arch-chroot /mnt pacman -S --noconfirm openssh
+            arch-chroot /mnt sed -i 's/^#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
             arch-chroot /mnt systemctl enable sshd
         fi
     } >> "$LOG_FILE" 2>&1 || show_error "Network configuration failed"
