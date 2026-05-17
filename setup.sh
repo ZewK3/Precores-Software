@@ -625,7 +625,7 @@ install_nomachine() {
         arch-chroot /mnt bash -c "cd /tmp && \
             wget -q -O nomachine.tar.gz \"https://download.nomachine.com/download/9.5/Linux/nomachine_9.5.7_2_x86_64.tar.gz\" && \
             tar zxf nomachine.tar.gz && \
-            cd NX && ./nxserver --install"
+            cd NX && ./nxserver --install fedora"
         
         # Optimize NoMachine for headless/VM farm
         arch-chroot /mnt sed -i 's/^[#]*EnableUPnP.*/EnableUPnP none/' /usr/NX/etc/server.cfg || true
