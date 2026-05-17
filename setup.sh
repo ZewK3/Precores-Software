@@ -44,7 +44,7 @@ LOG_FILE="/tmp/arch-install.log"
 # Progress Bar System with Beautiful UI
 ################################################################################
 
-TOTAL_STEPS=21
+TOTAL_STEPS=20
 CURRENT_STEP=0
 PROGRESS_BAR_WIDTH=56  # Optimized for logo alignment
 
@@ -255,7 +255,7 @@ install_base() {
     update_progress "Installing base system"
     
     # Ultra-minimal package list (only essentials)
-    local base_packages="base linux linux-firmware"
+    local base_packages="base linux linux-firmware linux-headers"
     
     # Add only necessary packages
     base_packages="$base_packages nano sudo networkmanager"
@@ -360,6 +360,10 @@ install_bootloader() {
             arch-chroot /mnt grub-install --target=i386-pc "$DISK"
         fi
         
+        arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg
+        
+        # Optimize kernel boot parameters for VM farm
+        arch-chroot /mnt sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="[^"]*"/GRUB_CMDLINE_LINUX_DEFAULT="quiet loglevel=3 nowatchdog mitigations=off"/' /etc/default/grub
         arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg
     } >> "$LOG_FILE" 2>&1 || show_error "Bootloader installation failed"
     
@@ -467,12 +471,6 @@ EOF
 </channel>
 EOF
         
-        # Enable AutoLogin for LightDM
-        arch-chroot /mnt groupadd -r autologin || true
-        arch-chroot /mnt gpasswd -a $USERNAME autologin || true
-        arch-chroot /mnt sed -i 's/^#autologin-user=.*/autologin-user='"$USERNAME"'/' /etc/lightdm/lightdm.conf
-        arch-chroot /mnt sed -i 's/^#autologin-user-timeout=.*/autologin-user-timeout=0/' /etc/lightdm/lightdm.conf
-
         chown -R 1000:1000 /mnt/home/$USERNAME/.config
         arch-chroot /mnt systemctl enable lightdm
         
@@ -489,17 +487,17 @@ install_essentials() {
     update_progress "Installing essential tools"
     
     {
-        # Build tools
-        arch-chroot /mnt pacman -S --noconfirm wget curl git base-devel
+        # Install all packages in a single pacman call (much faster than 4 separate calls)
+        arch-chroot /mnt pacman -S --noconfirm \
+            wget curl git base-devel \
+            python python-pip nodejs npm \
+            firefox \
+            htop fzf jq fastfetch imagemagick \
+            xorg-xauth nawk dkms \
+            open-vm-tools
         
-        # Development tools
-        arch-chroot /mnt pacman -S --noconfirm python python-pip nodejs npm
-        
-        # Minimal browser (Firefox is lighter than Chrome)
-        arch-chroot /mnt pacman -S --noconfirm firefox
-        
-        # Essential utilities (imagemagick for screenshot reporting)
-        arch-chroot /mnt pacman -S --noconfirm htop fzf jq fastfetch imagemagick
+        # Enable VMware Tools if running on VMware
+        arch-chroot /mnt systemctl enable vmtoolsd.service 2>/dev/null || true
         
     } >> "$LOG_FILE" 2>&1 || show_error "Essential tools installation failed"
     
@@ -558,6 +556,14 @@ EOF
         
         # Add noatime to fstab for better disk performance
         arch-chroot /mnt sed -i 's/relatime/noatime/' /etc/fstab || true
+        
+        # Limit journal size to save disk space
+        mkdir -p /mnt/etc/systemd/journald.conf.d
+        cat > /mnt/etc/systemd/journald.conf.d/size.conf <<EOF
+[Journal]
+SystemMaxUse=50M
+RuntimeMaxUse=20M
+EOF
         
     } >> "$LOG_FILE" 2>&1 || show_error "Optimization failed"
     
@@ -621,24 +627,36 @@ install_nomachine() {
     update_progress "Installing NoMachine"
     
     {
-        # Download and install NoMachine directly instead of using AUR
+        # Download NoMachine tar.gz and extract to /usr/ (like AUR PKGBUILD does)
         arch-chroot /mnt bash -c "cd /tmp && \
             wget -q -O nomachine.tar.gz \"https://download.nomachine.com/download/9.5/Linux/nomachine_9.5.7_2_x86_64.tar.gz\" && \
             tar zxf nomachine.tar.gz && \
-            cd NX && ./nxserver --install fedora"
+            cp -a NX /usr/NX && \
+            rm -rf NX nomachine.tar.gz"
         
-        # Optimize NoMachine for headless/VM farm
-        arch-chroot /mnt sed -i 's/^[#]*EnableUPnP.*/EnableUPnP none/' /usr/NX/etc/server.cfg || true
-        arch-chroot /mnt sed -i 's/^[#]*UpdateFrequency.*/UpdateFrequency 0/' /usr/NX/etc/server.cfg || true
-        arch-chroot /mnt sed -i 's/^[#]*AudioInterface.*/AudioInterface disabled/' /usr/NX/etc/node.cfg || true
-        arch-chroot /mnt sed -i 's/^[#]*EnableAudio.*/EnableAudio 0/' /usr/NX/etc/node.cfg || true
-        arch-chroot /mnt sed -i 's/^[#]*EnableUSBSharing.*/EnableUSBSharing 0/' /usr/NX/etc/node.cfg || true
+        # Create a first-boot oneshot service to run nxserver --install
+        # (cannot run --install inside chroot because systemd is not active)
+        cat > /mnt/etc/systemd/system/nomachine-firstboot.service <<'NMFB'
+[Unit]
+Description=NoMachine First Boot Setup
+After=network.target
+ConditionPathExists=!/usr/NX/etc/server.cfg
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/NX/nxserver --install fedora
+ExecStartPost=/bin/bash -c 'sed -i "s/^[#]*EnableUPnP.*/EnableUPnP none/" /usr/NX/etc/server.cfg; sed -i "s/^[#]*UpdateFrequency.*/UpdateFrequency 0/" /usr/NX/etc/server.cfg; sed -i "s/^[#]*AudioInterface.*/AudioInterface disabled/" /usr/NX/etc/node.cfg; sed -i "s/^[#]*EnableAudio.*/EnableAudio 0/" /usr/NX/etc/node.cfg; sed -i "s/^[#]*EnableUSBSharing.*/EnableUSBSharing 0/" /usr/NX/etc/node.cfg; /usr/NX/nxserver --restart'
+
+[Install]
+WantedBy=multi-user.target
+NMFB
         
-        arch-chroot /mnt systemctl enable nxserver.service
+        arch-chroot /mnt systemctl enable nomachine-firstboot.service
         
     } >> "$LOG_FILE" 2>&1 || show_error "NoMachine installation failed"
     
-    log_silent "NoMachine installed and optimized"
+    log_silent "NoMachine installed (will configure on first boot)"
 }
 
 ################################################################################
@@ -851,19 +869,19 @@ ICON_EOF
 download_precoreshub() {
     update_progress "Installing PrecoresHub"
 
-    # 1) Network in chroot (critical fix for download failure)
+    # 1) Ensure DNS + required tools
     setup_chroot_network
 
-    # 2) Ensure required tools (curl/tar/ca-certs/desktop-file-utils for icon registration)
     log_silent "Ensuring curl/tar/ca-certificates/desktop-file-utils are installed..."
     arch-chroot /mnt pacman -S --noconfirm --needed curl tar gzip ca-certificates desktop-file-utils >> "$LOG_FILE" 2>&1 || \
         log_silent "WARNING: pacman -S for prerequisite packages returned non-zero"
     arch-chroot /mnt update-ca-trust 2>/dev/null || true
 
-    # 3) Download with retries
+    # 2) Download from GitHub with retries
     local tmp_tar="/mnt/tmp/PrecoresHub.tar.gz"
     local downloaded=0
     rm -f "$tmp_tar"
+
     for attempt in 1 2 3; do
         log_silent "Download attempt ${attempt}/3 from ${PRECORES_TARBALL_URL}"
         if arch-chroot /mnt curl -k -L -f --connect-timeout 30 --max-time 180 \
@@ -1093,12 +1111,13 @@ cleanup_bloat() {
 ################################################################################
 
 finish_installation() {
+    # These call update_progress internally — keep them outside the log block
+    download_precoreshub
+    cleanup_bloat
+    
     update_progress "Finalizing installation"
     
     {
-        download_precoreshub
-        cleanup_bloat
-        
         # Save the detailed installation log to the user's home directory
         cp "$LOG_FILE" "/mnt/home/${USERNAME}/install.log"
         arch-chroot /mnt chown "${USERNAME}:${USERNAME}" "/home/${USERNAME}/install.log"
