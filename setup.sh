@@ -933,32 +933,31 @@ download_precoreshub() {
 
     # 2) Download from GitHub with retries
     local tmp_tar="/mnt/tmp/PrecoresHub.tar.gz"
-    local downloaded=0
     rm -f "$tmp_tar"
 
     for attempt in 1 2 3; do
         log_silent "Download attempt ${attempt}/3 from ${PRECORES_TARBALL_URL}"
-        if arch-chroot /mnt curl -k -L -f --connect-timeout 30 --max-time 180 \
-                -o /tmp/PrecoresHub.tar.gz "$PRECORES_TARBALL_URL" >> "$LOG_FILE" 2>&1; then
-            downloaded=1
-            break
+        arch-chroot /mnt curl -k -L --connect-timeout 30 --max-time 180 \
+                -o /tmp/PrecoresHub.tar.gz "$PRECORES_TARBALL_URL" >> "$LOG_FILE" 2>&1 || true
+        
+        # Check if file was actually downloaded (don't trust curl exit code)
+        if [[ -f "$tmp_tar" ]]; then
+            local dl_size
+            dl_size=$(stat -c%s "$tmp_tar" 2>/dev/null || echo "0")
+            if [[ "$dl_size" -gt 10000 ]]; then
+                log_silent "Download OK (${dl_size} bytes)"
+                break
+            fi
         fi
+        log_silent "Attempt ${attempt} failed or file too small, retrying..."
+        rm -f "$tmp_tar"
         sleep 3
     done
 
-    if [[ $downloaded -ne 1 ]] || [[ ! -f "$tmp_tar" ]]; then
+    if [[ ! -f "$tmp_tar" ]]; then
         log_silent "ERROR: PrecoresHub download failed after 3 attempts - Skipping"
         return 0
     fi
-
-    local file_size
-    file_size=$(stat -c%s "$tmp_tar" 2>/dev/null || echo "0")
-    if [[ "$file_size" -lt 10000 ]]; then
-        log_silent "ERROR: tarball too small (${file_size} bytes), likely 404 page - Skipping"
-        rm -f "$tmp_tar"
-        return 0
-    fi
-    log_silent "Downloaded successfully (${file_size} bytes)"
 
     # 4) Extract straight into /opt/precoreshub (system-wide, hidden from $HOME file manager)
     log_silent "Extracting to ${PRECORES_DIR}..."
