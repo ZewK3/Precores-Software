@@ -491,13 +491,12 @@ install_essentials() {
     update_progress "Installing essential tools"
     
     {
-        # Install all packages in a single pacman call (much faster than 4 separate calls)
         arch-chroot /mnt pacman -S --noconfirm \
             wget curl git base-devel \
             python python-pip nodejs npm \
             firefox \
             htop fzf jq fastfetch imagemagick \
-            xorg-xauth nawk dkms \
+            xorg-xauth gawk dkms polkit \
             open-vm-tools
         
         # Enable VMware Tools if running on VMware
@@ -638,19 +637,70 @@ install_nomachine() {
             cp -a NX /usr/NX && \
             rm -rf NX nomachine.tar.gz"
         
-        # Create a first-boot oneshot service to run nxserver --install
-        # (cannot run --install inside chroot because systemd is not active)
+        # Create nawk symlink (NoMachine requires 'nawk' but Arch only has 'gawk')
+        arch-chroot /mnt ln -sf /usr/bin/gawk /usr/local/bin/nawk 2>/dev/null || true
+        
+        # Create the first-boot setup script (more robust than inline ExecStart)
+        cat > /mnt/usr/local/bin/nomachine-setup.sh <<'NMSETUP'
+#!/bin/bash
+LOG="/var/log/nomachine-setup.log"
+exec >> "$LOG" 2>&1
+echo "=== NoMachine First Boot Setup $(date) ==="
+
+# Skip if already configured
+if [[ -f /usr/NX/etc/server.cfg ]]; then
+    echo "NoMachine already configured, skipping."
+    exit 0
+fi
+
+if [[ ! -f /usr/NX/nxserver ]]; then
+    echo "ERROR: /usr/NX/nxserver not found!"
+    exit 1
+fi
+
+# Run the installer
+echo "Running nxserver --install fedora..."
+/usr/NX/nxserver --install fedora || {
+    echo "WARN: nxserver --install returned non-zero, trying --update..."
+    /usr/NX/nxserver --update fedora || true
+}
+
+# Wait for config files to be created
+sleep 3
+
+# Optimize for VM farm
+if [[ -f /usr/NX/etc/server.cfg ]]; then
+    sed -i 's/^[#]*EnableUPnP.*/EnableUPnP none/' /usr/NX/etc/server.cfg
+    sed -i 's/^[#]*UpdateFrequency.*/UpdateFrequency 0/' /usr/NX/etc/server.cfg
+    echo "server.cfg optimized"
+fi
+
+if [[ -f /usr/NX/etc/node.cfg ]]; then
+    sed -i 's/^[#]*AudioInterface.*/AudioInterface disabled/' /usr/NX/etc/node.cfg
+    sed -i 's/^[#]*EnableAudio.*/EnableAudio 0/' /usr/NX/etc/node.cfg
+    sed -i 's/^[#]*EnableUSBSharing.*/EnableUSBSharing 0/' /usr/NX/etc/node.cfg
+    echo "node.cfg optimized"
+fi
+
+# Restart to apply
+/usr/NX/nxserver --restart 2>/dev/null || true
+echo "=== NoMachine setup complete ==="
+NMSETUP
+        chmod 755 /mnt/usr/local/bin/nomachine-setup.sh
+        
+        # Create systemd service
         cat > /mnt/etc/systemd/system/nomachine-firstboot.service <<'NMFB'
 [Unit]
 Description=NoMachine First Boot Setup
-After=network.target
-ConditionPathExists=!/usr/NX/etc/server.cfg
+After=network-online.target lightdm.service
+Wants=network-online.target
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/NX/nxserver --install fedora
-ExecStartPost=/bin/bash -c 'sed -i "s/^[#]*EnableUPnP.*/EnableUPnP none/" /usr/NX/etc/server.cfg; sed -i "s/^[#]*UpdateFrequency.*/UpdateFrequency 0/" /usr/NX/etc/server.cfg; sed -i "s/^[#]*AudioInterface.*/AudioInterface disabled/" /usr/NX/etc/node.cfg; sed -i "s/^[#]*EnableAudio.*/EnableAudio 0/" /usr/NX/etc/node.cfg; sed -i "s/^[#]*EnableUSBSharing.*/EnableUSBSharing 0/" /usr/NX/etc/node.cfg; /usr/NX/nxserver --restart'
+ExecStart=/usr/local/bin/nomachine-setup.sh
+# Don't fail the boot if NoMachine setup has issues
+SuccessExitStatus=0 1
 
 [Install]
 WantedBy=multi-user.target
