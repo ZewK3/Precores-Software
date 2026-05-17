@@ -266,6 +266,10 @@ install_base() {
     {
         pacstrap /mnt $base_packages
         genfstab -U /mnt >> /mnt/etc/fstab
+        
+        # Ensure DNS works inside chroot for all subsequent pacman calls
+        cp -L /etc/resolv.conf /mnt/etc/resolv.conf 2>/dev/null || \
+            printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > /mnt/etc/resolv.conf
     } >> "$LOG_FILE" 2>&1 || show_error "Base installation failed"
     
     log_silent "Base system installed"
