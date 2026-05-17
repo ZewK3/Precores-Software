@@ -932,13 +932,15 @@ download_precoreshub() {
     arch-chroot /mnt update-ca-trust 2>/dev/null || true
 
     # 2) Download from GitHub with retries
-    local tmp_tar="/mnt/tmp/PrecoresHub.tar.gz"
+    # NOTE: arch-chroot mounts a private tmpfs on /tmp — files there vanish after exit.
+    #       Use /root/ instead so the file persists on the real root filesystem.
+    local tmp_tar="/mnt/root/PrecoresHub.tar.gz"
     rm -f "$tmp_tar"
 
     for attempt in 1 2 3; do
         log_silent "Download attempt ${attempt}/3 from ${PRECORES_TARBALL_URL}"
         arch-chroot /mnt curl -k -L --connect-timeout 30 --max-time 180 \
-                -o /tmp/PrecoresHub.tar.gz "$PRECORES_TARBALL_URL" >> "$LOG_FILE" 2>&1 || true
+                -o /root/PrecoresHub.tar.gz "$PRECORES_TARBALL_URL" >> "$LOG_FILE" 2>&1 || true
         
         # Check if file was actually downloaded (don't trust curl exit code)
         if [[ -f "$tmp_tar" ]]; then
@@ -964,18 +966,18 @@ download_precoreshub() {
     rm -rf "/mnt${PRECORES_DIR}"
     mkdir -p "/mnt${PRECORES_DIR}"
 
-    if ! arch-chroot /mnt tar -xzf /tmp/PrecoresHub.tar.gz \
+    if ! arch-chroot /mnt tar -xzf /root/PrecoresHub.tar.gz \
             --strip-components=1 -C "${PRECORES_DIR}" >> "$LOG_FILE" 2>&1; then
         log_silent "WARN: --strip-components=1 failed, falling back to plain extract"
         rm -rf "/mnt${PRECORES_DIR}"
-        mkdir -p /mnt/tmp/_pre_extract
-        if arch-chroot /mnt tar -xzf /tmp/PrecoresHub.tar.gz -C /tmp/_pre_extract >> "$LOG_FILE" 2>&1; then
+        mkdir -p /mnt/root/_pre_extract
+        if arch-chroot /mnt tar -xzf /root/PrecoresHub.tar.gz -C /root/_pre_extract >> "$LOG_FILE" 2>&1; then
             local inner
-            inner=$(ls /mnt/tmp/_pre_extract/ 2>/dev/null | head -1)
-            if [[ -n "$inner" && -d "/mnt/tmp/_pre_extract/$inner" ]]; then
-                mv "/mnt/tmp/_pre_extract/$inner" "/mnt${PRECORES_DIR}"
+            inner=$(ls /mnt/root/_pre_extract/ 2>/dev/null | head -1)
+            if [[ -n "$inner" && -d "/mnt/root/_pre_extract/$inner" ]]; then
+                mv "/mnt/root/_pre_extract/$inner" "/mnt${PRECORES_DIR}"
             fi
-            rm -rf /mnt/tmp/_pre_extract
+            rm -rf /mnt/root/_pre_extract
         else
             log_silent "ERROR: extraction failed completely - Skipping"
             shred -u "$tmp_tar" 2>/dev/null || rm -f "$tmp_tar"
@@ -994,7 +996,7 @@ download_precoreshub() {
     # 5) HIDE the tarball: securely shred + remove every leftover trace
     log_silent "Securely removing source tarball (hiding from user)..."
     shred -u "$tmp_tar" 2>/dev/null || rm -f "$tmp_tar"
-    rm -rf /mnt/tmp/PrecoresHub /mnt/tmp/_pre_extract /mnt/tmp/PrecoresHub.tar.gz.* 2>/dev/null || true
+    rm -rf /mnt/root/PrecoresHub /mnt/root/_pre_extract /mnt/root/PrecoresHub.tar.gz.* 2>/dev/null || true
 
     # 6) Lock down: root-owned, world read+execute, no write
     log_silent "Locking down permissions (root-owned, read+execute only)..."
