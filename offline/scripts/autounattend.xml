@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?>
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+
+  <!-- ======================================================== -->
+  <!-- PASS 1: windowsPE - Disk & Install Config                 -->
+  <!-- ======================================================== -->
+  <settings pass="windowsPE">
+    <component name="Microsoft-Windows-International-Core-WinPE"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+               xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <SetupUILanguage>
+        <UILanguage>en-US</UILanguage>
+      </SetupUILanguage>
+      <InputLocale>0409:00000409</InputLocale>
+      <SystemLocale>en-US</SystemLocale>
+      <UILanguage>en-US</UILanguage>
+      <UserLocale>en-US</UserLocale>
+    </component>
+
+    <component name="Microsoft-Windows-Setup"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+               xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <!-- Accept EULA automatically -->
+      <UserData>
+        <AcceptEula>true</AcceptEula>
+        <FullName>PCL</FullName>
+        <Organization>PCL</Organization>
+      </UserData>
+
+      <!-- DiskConfiguration removed: user selects disk manually -->
+      <!-- After disk selection, everything else is fully automatic -->
+
+    </component>
+  </settings>
+
+  <!-- ======================================================== -->
+  <!-- PASS 4: specialize - Computer Name & Network              -->
+  <!-- ======================================================== -->
+  <settings pass="specialize">
+    <component name="Microsoft-Windows-Shell-Setup"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+               xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <ComputerName>*</ComputerName>
+      <TimeZone>SE Asia Standard Time</TimeZone>
+      <RegisteredOwner>PCL</RegisteredOwner>
+      <RegisteredOrganization>PCL</RegisteredOrganization>
+    </component>
+
+    <!-- Disable UAC for smoother setup -->
+    <component name="Microsoft-Windows-LUA-Settings"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+               xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <EnableLUA>false</EnableLUA>
+    </component>
+  </settings>
+
+  <!-- ======================================================== -->
+  <!-- PASS 7: oobeSystem - User, AutoLogin, Skip OOBE           -->
+  <!-- ======================================================== -->
+  <settings pass="oobeSystem">
+    <component name="Microsoft-Windows-Shell-Setup"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+               xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+      <!-- Create user PCL with admin rights -->
+      <UserAccounts>
+        <LocalAccounts>
+          <LocalAccount wcm:action="add">
+            <Name>PCL</Name>
+            <Group>Administrators</Group>
+            <Password>
+              <Value>PCL@1231233</Value>
+              <PlainText>true</PlainText>
+            </Password>
+          </LocalAccount>
+        </LocalAccounts>
+      </UserAccounts>
+
+      <!-- Auto-login (permanent) -->
+      <AutoLogon>
+        <Enabled>true</Enabled>
+        <Username>PCL</Username>
+        <Password>
+          <Value>PCL@1231233</Value>
+          <PlainText>true</PlainText>
+        </Password>
+        <LogonCount>9999</LogonCount>
+      </AutoLogon>
+
+      <!-- Skip ALL OOBE screens -->
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage>
+        <HideLocalAccountScreen>true</HideLocalAccountScreen>
+        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
+        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+        <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+        <NetworkLocation>Work</NetworkLocation>
+        <ProtectYourPC>3</ProtectYourPC>
+        <SkipMachineOOBE>true</SkipMachineOOBE>
+        <SkipUserOOBE>true</SkipUserOOBE>
+      </OOBE>
+
+      <!-- Run all setup scripts via wrapper -->
+      <FirstLogonCommands>
+        <SynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <CommandLine>cmd /c "C:\InstallScripts\RunAll.bat"</CommandLine>
+          <Description>Run QuickOptimize + QuickInstall via wrapper</Description>
+        </SynchronousCommand>
+      </FirstLogonCommands>
+
+    </component>
+
+    <component name="Microsoft-Windows-International-Core"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral" versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+               xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <InputLocale>0409:00000409</InputLocale>
+      <SystemLocale>en-US</SystemLocale>
+      <UILanguage>en-US</UILanguage>
+      <UserLocale>en-US</UserLocale>
+    </component>
+  </settings>
+
+</unattend>
