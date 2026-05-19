@@ -48,7 +48,7 @@ set "SEVENZIP_URL=https://www.7-zip.org/a/7z2408-x64.exe"
 set "VCREDIST_URL=https://aka.ms/vs/17/release/vc_redist.x64.exe"
 
 :: --- LDPlayer Emulator ---
-set "LDPLAYER_URL=https://encdn.ldmnq.com/download/package/LDPlayer9_en_1009_ld.exe"
+set "LDPLAYER_URL=https://res.ldrescdn.com/download/LDPlayer9.exe?n=LDPlayer9_vi_1254_ld.exe"
 
 :: --- Vietnamese Input ---
 set "UNIKEY_URL=https://www.unikey.org/assets/release/unikey46RC2-230919-win64.zip"
@@ -251,8 +251,8 @@ if /i not "%~f0"=="%USERPROFILE%\Desktop\QuickInstall.bat" (
 
 endlocal
 
-:: Self-delete
-(goto) 2>nul & del /f /q "%~f0" >nul 2>&1
+:: NOTE: Do NOT self-delete here.
+:: RunAll.bat handles cleanup of the entire InstallScripts folder.
 
 :: ============================================================
 :: SUBROUTINE: install_app

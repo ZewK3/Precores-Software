@@ -13,7 +13,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 set "SCRIPTS_DIR=%~dp0"
 if "%SCRIPTS_DIR:~-1%"=="\" set "SCRIPTS_DIR=%SCRIPTS_DIR:~0,-1%"
 for %%I in ("%SCRIPTS_DIR%\..") do set "BASE_DIR=%%~fI"
-set "ISO_SRC=%BASE_DIR%\tiny10 x64 23h.iso"
+set "ISO_SRC=%BASE_DIR%\tiny10 x64 beta 2.iso"
 set "ISO_FILES=%BASE_DIR%\ISO_FILES"
 set "OUTPUT_ISO=%BASE_DIR%\tiny10_optimized_ldplayer.iso"
 set "OSCDIMG=C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\amd64\Oscdimg\oscdimg.exe"
@@ -133,6 +133,14 @@ mkdir "%ISO_FILES%\sources\$OEM$\$1\InstallScripts" 2>nul
 copy /y "%SCRIPTS_DIR%\RunAll.bat" "%ISO_FILES%\sources\$OEM$\$1\InstallScripts\RunAll.bat" >nul
 copy /y "%SCRIPTS_DIR%\QuickOptimize.bat" "%ISO_FILES%\sources\$OEM$\$1\InstallScripts\QuickOptimize.bat" >nul
 copy /y "%SCRIPTS_DIR%\QuickInstall.bat" "%ISO_FILES%\sources\$OEM$\$1\InstallScripts\QuickInstall.bat" >nul
+if exist "%SCRIPTS_DIR%\logo-nen.png" (
+    copy /y "%SCRIPTS_DIR%\logo-nen.png" "%ISO_FILES%\sources\$OEM$\$1\InstallScripts\logo-nen.png" >nul
+    echo [*] Wallpaper logo-nen.png included.
+)
+if exist "%SCRIPTS_DIR%\avt.png" (
+    copy /y "%SCRIPTS_DIR%\avt.png" "%ISO_FILES%\sources\$OEM$\$1\InstallScripts\avt.png" >nul
+    echo [*] User avatar avt.png included.
+)
 
 echo [OK] Phase 2 complete.
 

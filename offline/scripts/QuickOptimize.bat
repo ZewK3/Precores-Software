@@ -298,7 +298,6 @@ for %%S in (
     MicrosoftEdgeElevationService
     TokenBroker InstallService LicenseManager StateRepository tiledatamodelsvc
     AppXSvc PushToInstall
-    FontCache
     Spooler PrintNotify
     SSDPSRV
     fdPHost FDResPub
@@ -320,7 +319,6 @@ for %%S in (
     cbdhsvc_*
     DisplayEnhancementService
     UdkUserSvc_*
-    MMCSS
 ) do (
     sc stop %%S >nul 2>&1
     sc config %%S start= disabled >nul 2>&1
@@ -582,24 +580,56 @@ echo  [6/11] Visual Performance Tweaks...
 echo ============================================================
 echo [6/11] Visual Performance Tweaks... >> "%LOG%"
 
-:: Set Visual Effects to Best Performance
-reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" /v VisualFXSetting /t REG_DWORD /d 2 /f >nul
-reg add "HKCU\Control Panel\Desktop" /v UserPreferencesMask /t REG_BINARY /d 9012038010000000 /f >nul
-:: Disable transparency
-reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v EnableTransparency /t REG_DWORD /d 0 /f >nul
-:: Disable animations
+:: Set Visual Effects to Custom (preserve themes, disable heavy animations)
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" /v VisualFXSetting /t REG_DWORD /d 3 /f >nul
+:: UserPreferencesMask: UIEffects ON (themes), font smoothing ON, disable animations
+:: Byte2=0x07 keeps UIEffects bit (visual styles/themes active)
+reg add "HKCU\Control Panel\Desktop" /v UserPreferencesMask /t REG_BINARY /d 9012078012000000 /f >nul
+:: Keep transparency for theme effects (commented out = stays enabled)
+:: reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v EnableTransparency /t REG_DWORD /d 0 /f >nul
+:: Disable animations (performance - does NOT affect themes)
 reg add "HKCU\Control Panel\Desktop\WindowMetrics" /v MinAnimate /t REG_SZ /d 0 /f >nul
 reg add "HKCU\Control Panel\Desktop" /v MenuShowDelay /t REG_SZ /d 0 /f >nul
 :: Disable Aero Shake
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v DisallowShaking /t REG_DWORD /d 1 /f >nul
-:: Disable Aero Peek
+:: Disable Aero Peek (performance)
 reg add "HKCU\Software\Microsoft\Windows\DWM" /v EnableAeroPeek /t REG_DWORD /d 0 /f >nul
-:: Disable window animation
-reg add "HKCU\Control Panel\Desktop" /v DragFullWindows /t REG_SZ /d 0 /f >nul
-reg add "HKCU\Control Panel\Desktop" /v Wallpaper /t REG_SZ /d "" /f >nul
-reg add "HKCU\Control Panel\Desktop" /v WallpaperStyle /t REG_SZ /d 0 /f >nul
-reg add "HKCU\Control Panel\Desktop" /v TileWallpaper /t REG_SZ /d 0 /f >nul
-reg add "HKCU\Control Panel\Colors" /v Background /t REG_SZ /d "0 0 0" /f >nul
+:: Set custom wallpaper (PreCore Lab branding)
+set "WP_SRC=C:\InstallScripts\logo-nen.png"
+set "WP_DST=%SystemRoot%\Web\Wallpaper\PCL\logo-nen.png"
+if exist "%WP_SRC%" (
+    if not exist "%SystemRoot%\Web\Wallpaper\PCL" mkdir "%SystemRoot%\Web\Wallpaper\PCL" >nul 2>&1
+    copy /y "%WP_SRC%" "%WP_DST%" >nul 2>&1
+    reg add "HKCU\Control Panel\Desktop" /v Wallpaper /t REG_SZ /d "%WP_DST%" /f >nul
+    reg add "HKCU\Control Panel\Desktop" /v WallpaperStyle /t REG_SZ /d 10 /f >nul
+    reg add "HKCU\Control Panel\Desktop" /v TileWallpaper /t REG_SZ /d 0 /f >nul
+    :: Also set for default user profile (new users get this wallpaper too)
+    reg add "HKU\.DEFAULT\Control Panel\Desktop" /v Wallpaper /t REG_SZ /d "%WP_DST%" /f >nul 2>&1
+    reg add "HKU\.DEFAULT\Control Panel\Desktop" /v WallpaperStyle /t REG_SZ /d 10 /f >nul 2>&1
+    reg add "HKU\.DEFAULT\Control Panel\Desktop" /v TileWallpaper /t REG_SZ /d 0 /f >nul 2>&1
+    :: Force wallpaper refresh
+    RUNDLL32.EXE user32.dll,UpdatePerUserSystemParameters ,1 ,True >nul 2>&1
+    echo   - Wallpaper set: PreCore Lab branding
+) else (
+    echo   - Wallpaper logo-nen.png not found, skipping
+)
+:: Set user avatar (PreCore Lab branding)
+set "AVT_SRC=C:\InstallScripts\avt.png"
+set "AVT_DST=%ProgramData%\Microsoft\User Account Pictures\pcl-avatar.png"
+if exist "%AVT_SRC%" (
+    copy /y "%AVT_SRC%" "%AVT_DST%" >nul 2>&1
+    :: Use SetUserTile API to set account picture for current user
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+        "$src='%AVT_DST%';" ^
+        "Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class UserTile { [DllImport(\"shell32.dll\", EntryPoint=\"#262\", CharSet=CharSet.Unicode)] public static extern int SetUserTile(string username, int reserved, string picture); }';" ^
+        "[UserTile]::SetUserTile('%USERNAME%', 0, $src)" >nul 2>&1
+    :: Also set as default account picture
+    copy /y "%AVT_SRC%" "%ProgramData%\Microsoft\User Account Pictures\user.png" >nul 2>&1
+    copy /y "%AVT_SRC%" "%ProgramData%\Microsoft\User Account Pictures\guest.png" >nul 2>&1
+    echo   - User avatar set: PreCore Lab branding
+) else (
+    echo   - Avatar avt.png not found, skipping
+)
 :: Disable cursor blink
 reg add "HKCU\Control Panel\Desktop" /v CursorBlinkRate /t REG_SZ /d -1 /f >nul
 :: Disable Smooth Scrolling (saves CPU cycles for LDPlayer)
@@ -611,8 +641,8 @@ reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v Ic
 :: Dark mode
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v AppsUseLightTheme /t REG_DWORD /d 0 /f >nul
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v SystemUsesLightTheme /t REG_DWORD /d 0 /f >nul
-echo   Visual performance optimized.
-echo   Visual performance optimized >> "%LOG%"
+echo   Visual performance optimized (themes + audio preserved).
+echo   Visual performance optimized (themes + audio preserved) >> "%LOG%"
 
 :: ============================================================
 :: PHASE 7: DISABLE SCHEDULED TASKS + TELEMETRY
@@ -739,13 +769,16 @@ echo  [8/11] Cleaning Up Files...
 echo ============================================================
 echo [8/11] Cleaning Up Files... >> "%LOG%"
 
-:: Wallpapers
+:: Wallpapers (keep PCL custom wallpaper)
 if exist "%SystemRoot%\Web\Wallpaper" (
-    for /d %%W in ("%SystemRoot%\Web\Wallpaper\*") do rmdir /s /q "%%W" >nul 2>&1
+    for /d %%W in ("%SystemRoot%\Web\Wallpaper\*") do (
+        echo %%~nxW | findstr /i "PCL" >nul 2>&1
+        if !errorlevel! neq 0 rmdir /s /q "%%W" >nul 2>&1
+    )
 )
 if exist "%SystemRoot%\Web\4K" rmdir /s /q "%SystemRoot%\Web\4K" >nul 2>&1
 if exist "%SystemRoot%\Web\Screen" rmdir /s /q "%SystemRoot%\Web\Screen" >nul 2>&1
-echo   - Cleaned wallpapers
+echo   - Cleaned wallpapers (kept PCL branding)
 
 :: Screensavers
 del /f /q "%SystemRoot%\System32\*.scr" >nul 2>&1
@@ -1175,10 +1208,11 @@ echo   - BCD: TSC sync enhanced, integrity checks off, all cores used at boot
 
 :: ---- EXTREME RAM SAVING FOR LDPLAYER ----
 
-:: Disable DWM (Desktop Window Manager) animations completely - saves ~50-100MB
+:: Disable DWM animations but keep theme colorization - saves ~50-100MB
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\DWM" /v DisableAnimations /t REG_DWORD /d 1 /f >nul
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\DWM" /v EnableAeroPeek /t REG_DWORD /d 0 /f >nul
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\DWM" /v ColorizationOpaqueBlend /t REG_DWORD /d 1 /f >nul
+:: Keep ColorizationOpaqueBlend=0 so window colorization/theme tinting works
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\DWM" /v ColorizationOpaqueBlend /t REG_DWORD /d 0 /f >nul
 
 :: Force minimum Desktop Heap size (saves ~30-50MB of kernel nonpaged pool)
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\SubSystems" /v Windows /t REG_SZ /d "%SystemRoot%\system32\csrss.exe ObjectDirectory=\Windows SharedSection=1024,512,256 Windows=On SubSystemType=Windows ServerDll=basesrv,1 ServerDll=winsrv:UserServerDllInitialization,3 ServerDll=sxssrv,4 ProfileControl=Off MaxRequestThreads=16" /f >nul
@@ -1226,19 +1260,18 @@ reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v En
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v TaskbarAnimations /t REG_DWORD /d 0 /f >nul
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v ListviewShadow /t REG_DWORD /d 0 /f >nul
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v ListviewAlphaSelect /t REG_DWORD /d 0 /f >nul
-:: Disable desktop composition effects entirely
-reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" /v VisualFXSetting /t REG_DWORD /d 2 /f >nul
-:: Bare minimum visual effects mask: no animation, no shadows, no smooth scroll
-reg add "HKCU\Control Panel\Desktop" /v UserPreferencesMask /t REG_BINARY /d 9012008010000000 /f >nul
-echo   - Explorer ultra-light mode
+:: Keep themes active - do NOT override VisualFXSetting here (already set to Custom in Phase 6)
+:: reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" /v VisualFXSetting /t REG_DWORD /d 2 /f >nul
+:: reg add "HKCU\Control Panel\Desktop" /v UserPreferencesMask /t REG_BINARY /d 9012008010000000 /f >nul
+echo   - Explorer light mode (themes preserved)
 
 :: Set process working set trimming (aggressively reclaim idle RAM from background processes)
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v SystemPages /t REG_DWORD /d 0 /f >nul
 
-:: Disable font smoothing (saves GPU/CPU + small RAM per process)
-reg add "HKCU\Control Panel\Desktop" /v FontSmoothing /t REG_SZ /d 0 /f >nul
-reg add "HKCU\Control Panel\Desktop" /v FontSmoothingType /t REG_DWORD /d 0 /f >nul
-echo   - Font smoothing disabled (saves RAM per process)
+:: Keep font smoothing ON for readable text with themes (ClearType)
+:: reg add "HKCU\Control Panel\Desktop" /v FontSmoothing /t REG_SZ /d 0 /f >nul
+:: reg add "HKCU\Control Panel\Desktop" /v FontSmoothingType /t REG_DWORD /d 0 /f >nul
+echo   - Font smoothing kept ON (themes preserved)
 
 :: Reduce screen resolution to save VRAM (LDPlayer has its own internal resolution)
 :: Set default to 1024x768 to save ~50-100MB VRAM vs 1080p
@@ -1302,7 +1335,7 @@ echo     SecurityHealthSystray.exe SecurityHealthService.exe
 echo     OneDrive.exe Teams.exe
 echo ^) do taskkill /f /im %%%%P ^>nul 2^>^&1
 echo :: Trim working set of heavy processes to reclaim idle RAM
-echo powershell -NoProfile -Command "Get-Process ^| Where-Object {$_.WorkingSet64 -gt 50MB -and $_.ProcessName -notmatch 'LDPlayer^|dnplayer^|svchost^|System^|csrss^|smss^|lsass^|explorer'} ^| ForEach-Object { $_.MinWorkingSet = 204800 }" ^>nul 2^>^&1
+echo powershell -NoProfile -Command "Get-Process | Where-Object {$_.WorkingSet64 -gt 50MB -and $_.ProcessName -notmatch 'LDPlayer|dnplayer|svchost|System|csrss|smss|lsass|explorer'} | ForEach-Object { $_.MinWorkingSet = 204800 }" ^>nul 2^>^&1
 echo goto :loop
 ) > "%KILL_SCRIPT%"
 schtasks /Delete /TN "KillBloat" /F >nul 2>&1
@@ -1481,9 +1514,9 @@ for /d %%D in ("%TEMP%\*") do rmdir /s /q "%%D" >nul 2>&1
 for /d %%D in ("%SystemRoot%\Temp\*") do rmdir /s /q "%%D" >nul 2>&1
 echo   - Temp files cleaned
 
-:: Clean install scripts after execution
-if exist "C:\InstallScripts" rmdir /s /q "C:\InstallScripts" >nul 2>&1
-echo   - Install scripts cleaned
+:: NOTE: Do NOT delete C:\InstallScripts here!
+:: RunAll.bat handles cleanup AFTER QuickInstall.bat finishes.
+echo   - Install scripts cleanup deferred to RunAll.bat
 
 :: ---- AGGRESSIVE DISK RECLAIM ----
 
@@ -1530,7 +1563,7 @@ set "RECLAIM=%PCL_DIR%\reclaim_ram.bat"
 (
 echo @echo off
 echo echo Reclaiming RAM...
-echo powershell -NoProfile -Command "Get-Process ^| Where-Object {$_.ProcessName -notmatch 'LDPlayer^|dnplayer^|System^|csrss^|smss^|lsass'} ^| ForEach-Object { $_.MinWorkingSet = 204800 }"
+echo powershell -NoProfile -Command "Get-Process | Where-Object {$_.ProcessName -notmatch 'LDPlayer|dnplayer|System|csrss|smss|lsass'} | ForEach-Object { $_.MinWorkingSet = 204800 }"
 echo rundll32.exe advapi32.dll,ProcessIdleTasks
 echo echo Done. RAM reclaimed.
 echo timeout /t 3
