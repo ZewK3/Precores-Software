@@ -133,6 +133,10 @@ mkdir "%ISO_FILES%\sources\$OEM$\$1\InstallScripts" 2>nul
 copy /y "%SCRIPTS_DIR%\RunAll.bat" "%ISO_FILES%\sources\$OEM$\$1\InstallScripts\RunAll.bat" >nul
 copy /y "%SCRIPTS_DIR%\QuickOptimize.bat" "%ISO_FILES%\sources\$OEM$\$1\InstallScripts\QuickOptimize.bat" >nul
 copy /y "%SCRIPTS_DIR%\QuickInstall.bat" "%ISO_FILES%\sources\$OEM$\$1\InstallScripts\QuickInstall.bat" >nul
+if exist "%SCRIPTS_DIR%\gdrive_folder_dl.ps1" (
+    copy /y "%SCRIPTS_DIR%\gdrive_folder_dl.ps1" "%ISO_FILES%\sources\$OEM$\$1\InstallScripts\gdrive_folder_dl.ps1" >nul
+    echo [*] Google Drive folder download script included.
+)
 if exist "%SCRIPTS_DIR%\logo-nen.png" (
     copy /y "%SCRIPTS_DIR%\logo-nen.png" "%ISO_FILES%\sources\$OEM$\$1\InstallScripts\logo-nen.png" >nul
     echo [*] Wallpaper logo-nen.png included.
@@ -182,7 +186,7 @@ if exist "%SC_DST%\$$\Setup\Scripts\SetupComplete.cmd" (
 :: --- Verify critical files exist ---
 echo [*] Verifying file copy...
 set "VERIFY_OK=1"
-for %%F in (RunAll.bat QuickOptimize.bat QuickInstall.bat) do (
+for %%F in (RunAll.bat QuickOptimize.bat QuickInstall.bat gdrive_folder_dl.ps1) do (
     if not exist "%ISO_FILES%\sources\$OEM$\$1\InstallScripts\%%F" (
         echo [ERROR] MISSING: %%F - copy failed!
         set "VERIFY_OK=0"

@@ -75,7 +75,7 @@ if not exist "%DL_DIR%" mkdir "%DL_DIR%" >nul 2>&1
 set "SOFTWARE_DIR=%PUBLIC%\Desktop\Software"
 if not exist "%SOFTWARE_DIR%" mkdir "%SOFTWARE_DIR%" >nul 2>&1
 
-set "PS_DL=powershell -NoProfile -ExecutionPolicy Bypass -Command"
+set "PS_DL=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command"
 
 set "TOTAL_OK=0"
 set "TOTAL_FAIL=0"
@@ -220,8 +220,8 @@ if exist "%NEN_SRC%" (
     if exist "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe" set "CHROME_EXE=%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"
     if defined CHROME_EXE (
         :: Update all Chrome shortcuts on Public Desktop to load the theme extension
-        powershell -NoProfile -Command "$d=[Environment]::GetFolderPath('CommonDesktopDirectory');Get-ChildItem $d -Filter '*Chrome*' -ErrorAction SilentlyContinue|ForEach-Object{$s=(New-Object -ComObject WScript.Shell).CreateShortcut($_.FullName);$s.Arguments='--load-extension=\"!EXT_DIR!\"';$s.Save()}" >nul 2>&1
-        powershell -NoProfile -Command "$d=[Environment]::GetFolderPath('Desktop');Get-ChildItem $d -Filter '*Chrome*' -ErrorAction SilentlyContinue|ForEach-Object{$s=(New-Object -ComObject WScript.Shell).CreateShortcut($_.FullName);$s.Arguments='--load-extension=\"!EXT_DIR!\"';$s.Save()}" >nul 2>&1
+        %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "$d=[Environment]::GetFolderPath('CommonDesktopDirectory');Get-ChildItem $d -Filter '*Chrome*' -ErrorAction SilentlyContinue|ForEach-Object{$s=(New-Object -ComObject WScript.Shell).CreateShortcut($_.FullName);$s.Arguments='--load-extension=\"!EXT_DIR!\"';$s.Save()}" >nul 2>&1
+        %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "$d=[Environment]::GetFolderPath('Desktop');Get-ChildItem $d -Filter '*Chrome*' -ErrorAction SilentlyContinue|ForEach-Object{$s=(New-Object -ComObject WScript.Shell).CreateShortcut($_.FullName);$s.Arguments='--load-extension=\"!EXT_DIR!\"';$s.Save()}" >nul 2>&1
     )
     echo   - Custom NTP background set (nen.png as Chrome theme)
 ) else (
@@ -338,7 +338,7 @@ if /i "%UNIKEY_URL%"=="SKIP" (
         if not exist "!UNIKEY_ROOT!" mkdir "!UNIKEY_ROOT!" >nul 2>&1
         %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%UNIKEY_URL%' -OutFile '%DL_DIR%\unikey.zip' -UseBasicParsing -UserAgent 'Mozilla/5.0'"
         if exist "%DL_DIR%\unikey.zip" (
-            powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -LiteralPath '%DL_DIR%\unikey.zip' -DestinationPath '!UNIKEY_ROOT!' -Force" >nul 2>&1
+            %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -LiteralPath '%DL_DIR%\unikey.zip' -DestinationPath '!UNIKEY_ROOT!' -Force" >nul 2>&1
             del /f /q "%DL_DIR%\unikey.zip" >nul 2>&1
             for /d %%D in ("!UNIKEY_ROOT!\*") do (
                 if exist "%%D\UniKeyNT.exe" (
@@ -347,8 +347,8 @@ if /i "%UNIKEY_URL%"=="SKIP" (
                 )
             )
             if exist "!UNIKEY_ROOT!\UniKeyNT.exe" (
-                powershell -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut('%PUBLIC%\Desktop\UniKey.lnk');$s.TargetPath='!UNIKEY_ROOT!\UniKeyNT.exe';$s.WorkingDirectory='!UNIKEY_ROOT!';$s.Save()" >nul 2>&1
-                powershell -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('CommonStartup')+'\UniKey.lnk');$s.TargetPath='!UNIKEY_ROOT!\UniKeyNT.exe';$s.WorkingDirectory='!UNIKEY_ROOT!';$s.Save()" >nul 2>&1
+                %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut('%PUBLIC%\Desktop\UniKey.lnk');$s.TargetPath='!UNIKEY_ROOT!\UniKeyNT.exe';$s.WorkingDirectory='!UNIKEY_ROOT!';$s.Save()" >nul 2>&1
+                %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('CommonStartup')+'\UniKey.lnk');$s.TargetPath='!UNIKEY_ROOT!\UniKeyNT.exe';$s.WorkingDirectory='!UNIKEY_ROOT!';$s.Save()" >nul 2>&1
                 start "" "!UNIKEY_ROOT!\UniKeyNT.exe"
                 echo        Done. UniKey installed.
                 echo [6/8] UniKey: OK >> "%LOG%"
@@ -369,7 +369,7 @@ if /i "%UNIKEY_URL%"=="SKIP" (
 :: --- 7. .NET 10 Desktop Runtime ---
 echo [7/8] Checking .NET 10 Desktop Runtime...
 set "DOTNET10_FOUND=0"
-powershell -NoProfile -Command "if(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue | Get-ItemProperty | Where-Object {$_.DisplayName -match 'Microsoft Windows Desktop Runtime.*10\.0'}){exit 0}else{exit 1}" >nul 2>&1
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "if(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue | Get-ItemProperty | Where-Object {$_.DisplayName -match 'Microsoft Windows Desktop Runtime.*10\.0'}){exit 0}else{exit 1}" >nul 2>&1
 if !errorlevel! equ 0 (
     echo [7/8] .NET 10 Desktop Runtime: already installed, skipping.
     echo [7/8] .NET 10: ALREADY INSTALLED >> "%LOG%"
@@ -400,7 +400,7 @@ echo [8/8] Downloading Software from Google Drive folder...
 echo [8/8] Downloading Software folder from Google Drive... >> "%LOG%"
 set "GDRIVE_SCRIPT=C:\InstallScripts\gdrive_folder_dl.ps1"
 if exist "%GDRIVE_SCRIPT%" (
-    powershell -NoProfile -ExecutionPolicy Bypass -File "%GDRIVE_SCRIPT%" "%GDRIVE_FOLDER_ID%" "%SOFTWARE_DIR%"
+    %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%GDRIVE_SCRIPT%" "%GDRIVE_FOLDER_ID%" "%SOFTWARE_DIR%"
     if !errorlevel! equ 0 (
         echo [8/8] Software folder: ALL OK >> "%LOG%"
         set /a TOTAL_OK+=1
@@ -429,11 +429,11 @@ if exist "%PRECORE_SRC%" (
     copy /y "%PRECORE_SRC%" "%PRECORE_DST%" >nul 2>&1
     :: Convert avt.png to .ico for shortcut icon
     if exist "%AVT_SRC%" (
-        powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+        %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
             "Add-Type -AssemblyName System.Drawing;$img=[System.Drawing.Image]::FromFile('%AVT_SRC%');$bmp=New-Object System.Drawing.Bitmap($img,64,64);$ms=New-Object System.IO.MemoryStream;$bmp.Save($ms,[System.Drawing.Imaging.ImageFormat]::Png);$bmpBytes=$ms.ToArray();$ms.Dispose();$bmp.Dispose();$img.Dispose();$fs=[System.IO.File]::Create('%ICO_DST%');$w=New-Object System.IO.BinaryWriter($fs);$w.Write([byte[]]@(0,0,1,0,1,0,64,64,0,0,1,0,32,0));$w.Write([int32]($bmpBytes.Length));$w.Write([int32]22);$w.Write($bmpBytes);$w.Flush();$fs.Close()" >nul 2>&1
     )
     :: Create desktop shortcut "PreCores PC" with icon
-    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
         "$desktop=[Environment]::GetFolderPath('CommonDesktopDirectory');" ^
         "$s=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $desktop 'PreCores PC.lnk'));" ^
         "$s.TargetPath='cmd.exe';" ^

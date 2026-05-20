@@ -106,7 +106,7 @@ echo     Write-Host "  - $app"
 echo }
 ) > "%PS_SCRIPT%"
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%"
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%"
 del /f /q "%PS_SCRIPT%" >nul 2>&1
 echo   Done.
 echo   UWP apps removed >> "%LOG%"
@@ -377,7 +377,7 @@ reg add "HKLM\SYSTEM\CurrentControlSet\Control\CrashControl" /v AutoReboot /t RE
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v LargeSystemCache /t REG_DWORD /d 0 /f >nul
 :: Dynamic DisablePagingExecutive + SvcHostSplit + IoPageLockLimit: ALL computed from RAM in ONE PS call
 :: This saves ~8 seconds vs 4 separate PowerShell startups
-for /f "usebackq tokens=1-5" %%A in (`powershell -NoProfile -Command "$m=(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory;$gb=[Math]::Round($m/1GB);$dpe=if($gb -ge 8){1}else{0};$svk=[Math]::Round($m/1KB);$io=[Math]::Round($m*0.1);if($gb -le 4){$pfn='4096';$pfx='8192'}elseif($gb -le 8){$pfn='8192';$pfx='16384'}elseif($gb -le 16){$pfn='8192';$pfx='24576'}else{$pfn='16384';$pfx='32768'};Write-Host $dpe $svk $io $pfn $pfx"`) do (
+for /f "usebackq tokens=1-5" %%A in (`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "$m=(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory;$gb=[Math]::Round($m/1GB);$dpe=if($gb -ge 8){1}else{0};$svk=[Math]::Round($m/1KB);$io=[Math]::Round($m*0.1);if($gb -le 4){$pfn='4096';$pfx='8192'}elseif($gb -le 8){$pfn='8192';$pfx='16384'}elseif($gb -le 16){$pfn='8192';$pfx='24576'}else{$pfn='16384';$pfx='32768'};Write-Host $dpe $svk $io $pfn $pfx"`) do (
     reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v DisablePagingExecutive /t REG_DWORD /d %%A /f >nul
     set "SVCHOSTSPLIT=%%B"
     set "IOPAGELIMIT=%%C"
@@ -478,7 +478,7 @@ reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer" /v ShowRecent 
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer" /v ShowFrequent /t REG_DWORD /d 0 /f >nul
 
 :: Create File Explorer shortcut on the shared desktop
-powershell -NoProfile -Command "$desktop=[Environment]::GetFolderPath('CommonDesktopDirectory');$s=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $desktop 'File Explorer.lnk'));$s.TargetPath='%SystemRoot%\explorer.exe';$s.Arguments='shell:ThisPCFolder';$s.IconLocation='%SystemRoot%\explorer.exe,0';$s.WorkingDirectory='%SystemRoot%';$s.Save()" >nul 2>&1
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "$desktop=[Environment]::GetFolderPath('CommonDesktopDirectory');$s=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $desktop 'File Explorer.lnk'));$s.TargetPath='%SystemRoot%\explorer.exe';$s.Arguments='shell:ThisPCFolder';$s.IconLocation='%SystemRoot%\explorer.exe,0';$s.WorkingDirectory='%SystemRoot%';$s.Save()" >nul 2>&1
 
 :: Disable News & Interests / Widgets
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Dsh" /v AllowNewsAndInterests /t REG_DWORD /d 0 /f >nul
@@ -617,7 +617,7 @@ if exist "%AVT_SRC%" (
     copy /y "%AVT_SRC%" "%AVT_DST%" >nul 2>&1
     :: Use SetUserTile API to set account picture for current user
     :: Timeout after 15s - shell32 #262 can hang if shell isn't ready
-    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
         "$j=Start-Job -ScriptBlock{" ^
         "Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class UserTile { [DllImport(\"shell32.dll\", EntryPoint=\"#262\", CharSet=CharSet.Unicode)] public static extern int SetUserTile(string username, int reserved, string picture); }';" ^
         "[UserTile]::SetUserTile('%USERNAME%', 0, '%AVT_DST%')" ^
@@ -1145,7 +1145,7 @@ set "CPU_DHEAP_I=4096"
 set "CPU_DHEAP_NI=2048"
 set "CPU_MAXWORK=8192"
 set "CPU_MAXREQ=16"
-for /f "usebackq tokens=1-14 delims=|" %%A in (`powershell -NoProfile -Command "$c=Get-CimInstance Win32_Processor|Select -First 1;$co=$c.NumberOfCores;$th=$c.NumberOfLogicalProcessors;$l2=if($c.L2CacheSize-gt0){$c.L2CacheSize}else{1024};$l3=if($c.L3CacheSize-gt0){$c.L3CacheSize}else{8192};$mh=$c.MaxClockSpeed;$bp=if($mh-ge3500){40}elseif($mh-ge2500){60}else{80};$ti=if($mh-ge3500){10}elseif($mh-ge2500){15}else{20};$it=if($co-ge16){70}elseif($co-ge8){60}else{50};$wc=[Math]::Max(4,[Math]::Min(32,$co));$wd=[Math]::Max(4,[Math]::Min(16,[Math]::Floor($co/2)));$dhi=if($co-ge16){8192}elseif($co-ge8){4096}else{2048};$dhni=[Math]::Floor($dhi/2);$mwi=[Math]::Max(4096,$th*256);$mrt=[Math]::Max(16,[Math]::Min(64,$co*2));Write-Host \"$co|$th|$l2|$l3|$mh|$bp|$ti|$it|$wc|$wd|$dhi|$dhni|$mwi|$mrt\""`) do (
+for /f "usebackq tokens=1-14 delims=|" %%A in (`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "$c=Get-CimInstance Win32_Processor|Select -First 1;$co=$c.NumberOfCores;$th=$c.NumberOfLogicalProcessors;$l2=if($c.L2CacheSize-gt0){$c.L2CacheSize}else{1024};$l3=if($c.L3CacheSize-gt0){$c.L3CacheSize}else{8192};$mh=$c.MaxClockSpeed;$bp=if($mh-ge3500){40}elseif($mh-ge2500){60}else{80};$ti=if($mh-ge3500){10}elseif($mh-ge2500){15}else{20};$it=if($co-ge16){70}elseif($co-ge8){60}else{50};$wc=[Math]::Max(4,[Math]::Min(32,$co));$wd=[Math]::Max(4,[Math]::Min(16,[Math]::Floor($co/2)));$dhi=if($co-ge16){8192}elseif($co-ge8){4096}else{2048};$dhni=[Math]::Floor($dhi/2);$mwi=[Math]::Max(4096,$th*256);$mrt=[Math]::Max(16,[Math]::Min(64,$co*2));Write-Host \"$co|$th|$l2|$l3|$mh|$bp|$ti|$it|$wc|$wd|$dhi|$dhni|$mwi|$mrt\""`) do (
     set "CPU_CORES=%%A"
     set "CPU_THREADS=%%B"
     set "CPU_L2=%%C"
@@ -1398,7 +1398,7 @@ echo   - Boot tweaks applied
 
 :: Force ENABLE Memory Compression (effectively gives ~30-50% more usable RAM on any system)
 echo   - Enabling Memory Compression...
-powershell -NoProfile -Command "Enable-MMAgent -MemoryCompression;Enable-MMAgent -PageCombining;Disable-MMAgent -ApplicationLaunchPrefetching;Disable-MMAgent -ApplicationPreLaunch;Disable-MMAgent -OperationAPI" >nul 2>&1
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "Enable-MMAgent -MemoryCompression;Enable-MMAgent -PageCombining;Disable-MMAgent -ApplicationLaunchPrefetching;Disable-MMAgent -ApplicationPreLaunch;Disable-MMAgent -OperationAPI" >nul 2>&1
 
 :: Process Scheduling Priority (Set to 24: Optimize for Background Services)
 :: This gives equal, long CPU timeslices to all running bots/apps, maximizing throughput instead of just the active window
@@ -1516,7 +1516,7 @@ echo   - Font smoothing kept ON (themes preserved)
 
 :: Reduce screen resolution to save VRAM (LDPlayer has its own internal resolution)
 :: Set default to 1024x768 to save ~50-100MB VRAM vs 1080p
-powershell -NoProfile -Command "Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;[StructLayout(LayoutKind.Sequential)]public struct DEVMODE{[MarshalAs(UnmanagedType.ByValTStr,SizeConst=32)]public string dmDeviceName;public short dmSpecVersion;public short dmDriverVersion;public short dmSize;public short dmDriverExtra;public int dmFields;public int dmPositionX;public int dmPositionY;public int dmDisplayOrientation;public int dmDisplayFixedOutput;public short dmColor;public short dmDuplex;public short dmYResolution;public short dmTTOption;public short dmCollate;[MarshalAs(UnmanagedType.ByValTStr,SizeConst=32)]public string dmFormName;public short dmLogPixels;public int dmBitsPerPel;public int dmPelsWidth;public int dmPelsHeight;public int dmDisplayFlags;public int dmDisplayFrequency;public int dmICMMethod;public int dmICMIntent;public int dmMediaType;public int dmDitherType;public int dmReserved1;public int dmReserved2;public int dmPanningWidth;public int dmPanningHeight;}public class PInvoke{[DllImport(\"user32.dll\")]public static extern int ChangeDisplaySettings(ref DEVMODE devMode,int flags);public static void SetRes(int w,int h){DEVMODE dm=new DEVMODE();dm.dmSize=(short)Marshal.SizeOf(typeof(DEVMODE));dm.dmPelsWidth=w;dm.dmPelsHeight=h;dm.dmFields=0x80000|0x100000;ChangeDisplaySettings(ref dm,0);}}' -Language CSharp;[PInvoke]::SetRes(1024,768)" >nul 2>&1
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;[StructLayout(LayoutKind.Sequential)]public struct DEVMODE{[MarshalAs(UnmanagedType.ByValTStr,SizeConst=32)]public string dmDeviceName;public short dmSpecVersion;public short dmDriverVersion;public short dmSize;public short dmDriverExtra;public int dmFields;public int dmPositionX;public int dmPositionY;public int dmDisplayOrientation;public int dmDisplayFixedOutput;public short dmColor;public short dmDuplex;public short dmYResolution;public short dmTTOption;public short dmCollate;[MarshalAs(UnmanagedType.ByValTStr,SizeConst=32)]public string dmFormName;public short dmLogPixels;public int dmBitsPerPel;public int dmPelsWidth;public int dmPelsHeight;public int dmDisplayFlags;public int dmDisplayFrequency;public int dmICMMethod;public int dmICMIntent;public int dmMediaType;public int dmDitherType;public int dmReserved1;public int dmReserved2;public int dmPanningWidth;public int dmPanningHeight;}public class PInvoke{[DllImport(\"user32.dll\")]public static extern int ChangeDisplaySettings(ref DEVMODE devMode,int flags);public static void SetRes(int w,int h){DEVMODE dm=new DEVMODE();dm.dmSize=(short)Marshal.SizeOf(typeof(DEVMODE));dm.dmPelsWidth=w;dm.dmPelsHeight=h;dm.dmFields=0x80000|0x100000;ChangeDisplaySettings(ref dm,0);}}' -Language CSharp;[PInvoke]::SetRes(1024,768)" >nul 2>&1
 echo   - Resolution set to 1024x768 (saves VRAM)
 
 :: ---- GPU THREAD PRIORITY (prioritize LDPlayer GPU rendering) ----
@@ -1591,7 +1591,7 @@ echo   EXTREME RAM saving tweaks applied >> "%LOG%"
 :: Enable Large Pages support (LDPlayer benefits from large memory pages)
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v LargePageMinimum /t REG_DWORD /d 1 /f >nul
 :: Grant Lock Pages in Memory privilege to all users (required for Large Pages)
-powershell -NoProfile -Command "$tmp=[System.IO.Path]::GetTempFileName();secedit /export /cfg $tmp /quiet;(Get-Content $tmp) -replace '(SeLockMemoryPrivilege.*)', '$1,*S-1-5-32-545' | Set-Content $tmp;secedit /configure /db ([System.IO.Path]::GetTempFileName()) /cfg $tmp /quiet;Remove-Item $tmp -Force" >nul 2>&1
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "$tmp=[System.IO.Path]::GetTempFileName();secedit /export /cfg $tmp /quiet;(Get-Content $tmp) -replace '(SeLockMemoryPrivilege.*)', '$1,*S-1-5-32-545' | Set-Content $tmp;secedit /configure /db ([System.IO.Path]::GetTempFileName()) /cfg $tmp /quiet;Remove-Item $tmp -Force" >nul 2>&1
 echo   - Large Pages enabled
 
 :: Disable DPC Watchdog (prevents BSOD DPC_WATCHDOG_VIOLATION under heavy emulator load)
@@ -1748,7 +1748,7 @@ netsh int tcp set heuristics disabled >nul 2>&1
 :: Disable Task Offload to prevent packet drops and latency spikes in Virtual NICs
 netsh int tcp set global taskoffload=disabled >nul 2>&1
 :: Force disable LSO (Large Send Offload) and Checksum Offload on all Virtual Adapters
-powershell -NoProfile -Command "Get-NetAdapter | Disable-NetAdapterChecksumOffload -IpIPv4 -TcpIPv4 -UdpIPv4 -ErrorAction SilentlyContinue; Get-NetAdapter | Disable-NetAdapterLso -IPv4 -IPv6 -ErrorAction SilentlyContinue; Get-NetAdapter | Disable-NetAdapterRsc -IPv4 -IPv6 -ErrorAction SilentlyContinue" >nul 2>&1
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "Get-NetAdapter | Disable-NetAdapterChecksumOffload -IpIPv4 -TcpIPv4 -UdpIPv4 -ErrorAction SilentlyContinue; Get-NetAdapter | Disable-NetAdapterLso -IPv4 -IPv6 -ErrorAction SilentlyContinue; Get-NetAdapter | Disable-NetAdapterRsc -IPv4 -IPv6 -ErrorAction SilentlyContinue" >nul 2>&1
 :: Maximize TCP connection limit for heavy automation/farming
 reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" /v MaxUserPort /t REG_DWORD /d 65534 /f >nul
 reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" /v Tcp1323Opts /t REG_DWORD /d 1 /f >nul
@@ -1761,7 +1761,7 @@ reg add "HKCU\Control Panel\Mouse" /v MouseThreshold2 /t REG_SZ /d 0 /f >nul
 echo   - TCP/UDP and Mouse tuned
 
 :: Disable NetBIOS over TCP/IP on all adapters (saves RAM + reduces broadcast noise)
-powershell -NoProfile -Command "Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Services\NetBT\Parameters\Interfaces' | ForEach-Object { Set-ItemProperty -Path $_.PSPath -Name 'NetbiosOptions' -Value 2 -ErrorAction SilentlyContinue }" >nul 2>&1
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Services\NetBT\Parameters\Interfaces' | ForEach-Object { Set-ItemProperty -Path $_.PSPath -Name 'NetbiosOptions' -Value 2 -ErrorAction SilentlyContinue }" >nul 2>&1
 echo   - NetBIOS over TCP/IP disabled
 
 :: Disable LLMNR (Link-Local Multicast Name Resolution) - reduces broadcast traffic
@@ -1782,7 +1782,7 @@ reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" /v
 echo   - SMB signing disabled
 
 :: Disable NIC power management on all adapters (prevents random disconnects)
-powershell -NoProfile -Command "Get-NetAdapter | ForEach-Object { Set-NetAdapterPowerManagement -Name $_.Name -WakeOnPattern Disabled -WakeOnMagicPacket Disabled -ErrorAction SilentlyContinue; Disable-NetAdapterPowerManagement -Name $_.Name -ErrorAction SilentlyContinue }" >nul 2>&1
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "Get-NetAdapter | ForEach-Object { Set-NetAdapterPowerManagement -Name $_.Name -WakeOnPattern Disabled -WakeOnMagicPacket Disabled -ErrorAction SilentlyContinue; Disable-NetAdapterPowerManagement -Name $_.Name -ErrorAction SilentlyContinue }" >nul 2>&1
 echo   - NIC power management disabled
 
 :: Disable DNS negative cache (faster retry on failed lookups)
@@ -1866,7 +1866,7 @@ if exist "%SystemRoot%\SoftwareDistribution" rmdir /s /q "%SystemRoot%\SoftwareD
 echo   - SoftwareDistribution purged
 
 :: Defrag SSD TRIM or HDD defrag
-powershell -NoProfile -Command "$d=Get-PhysicalDisk|Select-Object -First 1;if($d.MediaType -eq 'SSD'){Optimize-Volume -DriveLetter C -ReTrim -ErrorAction SilentlyContinue}else{Optimize-Volume -DriveLetter C -Defrag -ErrorAction SilentlyContinue}" >nul 2>&1
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "$d=Get-PhysicalDisk|Select-Object -First 1;if($d.MediaType -eq 'SSD'){Optimize-Volume -DriveLetter C -ReTrim -ErrorAction SilentlyContinue}else{Optimize-Volume -DriveLetter C -Defrag -ErrorAction SilentlyContinue}" >nul 2>&1
 echo   - Drive optimized (TRIM/Defrag)
 
 :: Force process all idle/pending tasks NOW
@@ -1879,12 +1879,12 @@ set "RECLAIM=%PCL_DIR%\reclaim_ram.bat"
 (
 echo @echo off
 echo echo Reclaiming RAM...
-echo powershell -NoProfile -Command "$ErrorActionPreference='SilentlyContinue';$c='using System;using System.Runtime.InteropServices;public class WS{[DllImport(''kernel32.dll'')]public static extern bool SetProcessWorkingSetSize(IntPtr h,IntPtr min,IntPtr max);}';Add-Type $c -EA SilentlyContinue;Get-Process ^| Where-Object {$_.ProcessName -notmatch 'LDPlayer^|dnplayer^|svchost^|System^|Idle^|csrss^|smss^|lsass^|explorer^|wininit^|winlogon^|services^|dwm^|fontdrvhost^|Memory Compression^|Registry^|MsMpEng^|NisSrv^|SecurityHealth^|spoolsv^|WmiPrvSE'} ^| ForEach-Object { try{$h=$_.Handle;if($h){[void][WS]::SetProcessWorkingSetSize($h,[IntPtr]::new(-1),[IntPtr]::new(-1))}}catch{} }"
+echo %%SystemRoot%%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "$ErrorActionPreference='SilentlyContinue';$c='using System;using System.Runtime.InteropServices;public class WS{[DllImport(''kernel32.dll'')]public static extern bool SetProcessWorkingSetSize(IntPtr h,IntPtr min,IntPtr max);}';Add-Type $c -EA SilentlyContinue;Get-Process ^| Where-Object {$_.ProcessName -notmatch 'LDPlayer^|dnplayer^|svchost^|System^|Idle^|csrss^|smss^|lsass^|explorer^|wininit^|winlogon^|services^|dwm^|fontdrvhost^|Memory Compression^|Registry^|MsMpEng^|NisSrv^|SecurityHealth^|spoolsv^|WmiPrvSE'} ^| ForEach-Object { try{$h=$_.Handle;if($h){[void][WS]::SetProcessWorkingSetSize($h,[IntPtr]::new(-1),[IntPtr]::new(-1))}}catch{} }"
 echo rundll32.exe advapi32.dll,ProcessIdleTasks
 echo echo Done. RAM reclaimed.
 echo timeout /t 3
 ) > "%RECLAIM%"
-powershell -NoProfile -Command "$desktop=[Environment]::GetFolderPath('CommonDesktopDirectory');$s=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $desktop 'Reclaim RAM.lnk'));$s.TargetPath='cmd.exe';$s.Arguments='/c ""%RECLAIM%""';$s.IconLocation='%SystemRoot%\System32\shell32.dll,80';$s.WindowStyle=7;$s.Save()" >nul 2>&1
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "$desktop=[Environment]::GetFolderPath('CommonDesktopDirectory');$s=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $desktop 'Reclaim RAM.lnk'));$s.TargetPath='cmd.exe';$s.Arguments='/c ""%RECLAIM%""';$s.IconLocation='%SystemRoot%\System32\shell32.dll,80';$s.WindowStyle=7;$s.Save()" >nul 2>&1
 echo   - Reclaim RAM shortcut created on Desktop
 
 :: ---- SHOW DISK SAVINGS ----
@@ -1909,7 +1909,7 @@ echo.
 set "WP_DST=%SystemRoot%\Web\Wallpaper\PCL\logo-nen.png"
 if exist "%WP_DST%" (
     echo [*] Applying wallpaper...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+    %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
         "Add-Type 'using System;using System.Runtime.InteropServices;public class WP{[DllImport(\"user32.dll\",CharSet=CharSet.Unicode)]public static extern int SystemParametersInfo(int a,int b,string c,int d);}';[WP]::SystemParametersInfo(0x0014,0,'%WP_DST%',3)" >nul 2>&1
     echo   - Wallpaper applied: PreCore Lab
 )
