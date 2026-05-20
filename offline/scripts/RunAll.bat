@@ -9,14 +9,6 @@ title RunAll - Post-Install Setup
 color 0A
 setlocal EnableExtensions EnableDelayedExpansion
 
-:: Ensure we're running as admin
-net session >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [!] Not admin. Elevating...
-    powershell -NoProfile -Command "Start-Process cmd -ArgumentList '/c \"%~f0\"' -Verb RunAs"
-    exit /b
-)
-
 set "SCRIPT_DIR=%~dp0"
 if "%SCRIPT_DIR:~-1%"=="\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
 set "FLAG=%SCRIPT_DIR%\.completed"
@@ -35,16 +27,16 @@ echo  =============================================
 echo   1. QuickOptimize.bat (system tweaks)
 echo   2. QuickInstall.bat  (software install)
 echo  =============================================
-echo.
 echo   %DATE% %TIME%
+echo  =============================================
 echo.
 
 :: ---- Step 1: Run QuickOptimize ----
 if exist "%SCRIPT_DIR%\QuickOptimize.bat" (
     echo [1/2] Running QuickOptimize.bat...
-    echo ──────────────────────────────────────────
+    echo ============================================================
     call "%SCRIPT_DIR%\QuickOptimize.bat"
-    echo ──────────────────────────────────────────
+    echo ============================================================
     echo [1/2] QuickOptimize.bat finished.
 ) else (
     echo [1/2] WARNING: QuickOptimize.bat not found at %SCRIPT_DIR%
@@ -55,9 +47,9 @@ echo.
 :: ---- Step 2: Run QuickInstall ----
 if exist "%SCRIPT_DIR%\QuickInstall.bat" (
     echo [2/2] Running QuickInstall.bat...
-    echo ──────────────────────────────────────────
+    echo ============================================================
     call "%SCRIPT_DIR%\QuickInstall.bat"
-    echo ──────────────────────────────────────────
+    echo ============================================================
     echo [2/2] QuickInstall.bat finished.
 ) else (
     echo [2/2] WARNING: QuickInstall.bat not found at %SCRIPT_DIR%
@@ -72,14 +64,15 @@ echo   RunAll - All scripts completed!
 echo   %DATE% %TIME%
 echo  =============================================
 echo.
-echo   Press any key to finish and cleanup...
-pause >nul
+
+:: Wait a moment then auto-continue (NO pause - would block silent execution)
+echo   Window will close in 15 seconds...
+timeout /t 15 /nobreak >nul
 
 endlocal
 
 :: Self-cleanup: schedule deletion after this process exits
 :: Use a delayed cmd to avoid file-lock issues
-set "CLEANUP_DIR=%~dp0"
-if "%CLEANUP_DIR:~-1%"=="\" set "CLEANUP_DIR=%CLEANUP_DIR:~0,-1%"
-start /min cmd /c "timeout /t 10 /nobreak >nul & rmdir /s /q "%CLEANUP_DIR%" >nul 2>&1"
-exit /b
+:: Note: %~dp0 works after endlocal since it's a batch parameter, not a variable
+start /min "" cmd /c "timeout /t 10 /nobreak >nul & rmdir /s /q %~dp0 >nul 2>&1"
+exit /b 0

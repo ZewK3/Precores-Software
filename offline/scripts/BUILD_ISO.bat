@@ -13,7 +13,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 set "SCRIPTS_DIR=%~dp0"
 if "%SCRIPTS_DIR:~-1%"=="\" set "SCRIPTS_DIR=%SCRIPTS_DIR:~0,-1%"
 for %%I in ("%SCRIPTS_DIR%\..") do set "BASE_DIR=%%~fI"
-set "ISO_SRC=%BASE_DIR%\tiny10 x64 23h.iso"
+set "ISO_SRC=%BASE_DIR%\tiny10 x64 beta 2.iso"
 set "ISO_FILES=%BASE_DIR%\ISO_FILES"
 set "OUTPUT_ISO=%BASE_DIR%\tiny10_optimized_ldplayer.iso"
 set "OSCDIMG=C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\amd64\Oscdimg\oscdimg.exe"
@@ -156,10 +156,10 @@ if exist "%SCRIPTS_DIR%\precore-pc.bat" (
 echo [*] Creating SetupComplete.cmd fallback...
 set "SC_TEMP=%TEMP%\SetupComplete.cmd"
 > "%SC_TEMP%" echo @echo off
->> "%SC_TEMP%" echo :: SetupComplete.cmd - Register RunOnce for post-install
+>> "%SC_TEMP%" echo :: SetupComplete.cmd - Fallback: register RunOnce for post-install
 >> "%SC_TEMP%" echo if not exist "C:\InstallScripts\RunAll.bat" exit /b 0
 >> "%SC_TEMP%" echo if exist "C:\InstallScripts\.completed" exit /b 0
->> "%SC_TEMP%" echo reg add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce /v PostInstall /d "C:\InstallScripts\RunAll.bat" /f
+>> "%SC_TEMP%" echo reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce" /v PostInstall /t REG_SZ /d "cmd /c \"C:\InstallScripts\RunAll.bat\"" /f
 
 set "SC_DST=%ISO_FILES%\sources\$OEM$"
 mkdir "%SC_DST%\$$\Setup\Scripts" 2>nul

@@ -31,8 +31,9 @@ net session >nul 2>&1
 if %errorlevel% neq 0 (
     echo [WARN] Not running as admin - some operations may fail >> "%LOG%"
     echo [WARN] Not running as admin - some operations may fail
+) else (
+    echo [OK] Running as Administrator >> "%LOG%"
 )
-echo [OK] Running as Administrator >> "%LOG%"
 
 :: ============================================================
 :: SOFTWARE URLs

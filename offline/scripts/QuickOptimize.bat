@@ -601,34 +601,12 @@ reg add "HKCU\Control Panel\Desktop" /v MenuShowDelay /t REG_SZ /d 0 /f >nul
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v DisallowShaking /t REG_DWORD /d 1 /f >nul
 :: Disable Aero Peek (performance)
 reg add "HKCU\Software\Microsoft\Windows\DWM" /v EnableAeroPeek /t REG_DWORD /d 0 /f >nul
-:: Set custom wallpaper (PreCore Lab branding)
+:: Custom wallpaper setup is handled AFTER Phase 8 cleanup (to avoid deletion)
+:: Here we just set the registry paths - files are copied later
 set "WP_SRC=C:\InstallScripts\logo-nen.png"
 set "WP_DST=%SystemRoot%\Web\Wallpaper\PCL\logo-nen.png"
 if exist "%WP_SRC%" (
-    if not exist "%SystemRoot%\Web\Wallpaper\PCL" mkdir "%SystemRoot%\Web\Wallpaper\PCL" >nul 2>&1
-    copy /y "%WP_SRC%" "%WP_DST%" >nul 2>&1
-    :: Set wallpaper for current user
-    reg add "HKCU\Control Panel\Desktop" /v Wallpaper /t REG_SZ /d "%WP_DST%" /f >nul
-    reg add "HKCU\Control Panel\Desktop" /v WallpaperStyle /t REG_SZ /d 10 /f >nul
-    reg add "HKCU\Control Panel\Desktop" /v TileWallpaper /t REG_SZ /d 0 /f >nul
-    :: Set for default user profile (new users get this wallpaper too)
-    reg add "HKU\.DEFAULT\Control Panel\Desktop" /v Wallpaper /t REG_SZ /d "%WP_DST%" /f >nul 2>&1
-    reg add "HKU\.DEFAULT\Control Panel\Desktop" /v WallpaperStyle /t REG_SZ /d 10 /f >nul 2>&1
-    reg add "HKU\.DEFAULT\Control Panel\Desktop" /v TileWallpaper /t REG_SZ /d 0 /f >nul 2>&1
-    :: Force wallpaper via Group Policy (works regardless of user profile state)
-    reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP" /v DesktopImagePath /t REG_SZ /d "%WP_DST%" /f >nul 2>&1
-    reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP" /v DesktopImageUrl /t REG_SZ /d "%WP_DST%" /f >nul 2>&1
-    reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP" /v DesktopImageStatus /t REG_DWORD /d 1 /f >nul 2>&1
-    reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\Personalization" /v DesktopImagePath /t REG_SZ /d "%WP_DST%" /f >nul 2>&1
-    reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\Personalization" /v DesktopImageStyle /t REG_DWORD /d 10 /f >nul 2>&1
-    :: Force refresh via temp .ps1 script (avoids all batch escaping issues)
-    :: Use Start-Job with timeout to prevent hanging if desktop isn't ready
-    set "WP_PS=%TEMP%\set_wallpaper.ps1"
-    echo Add-Type 'using System;using System.Runtime.InteropServices;public class WP{[DllImport("user32.dll",CharSet=CharSet.Unicode)]public static extern int SystemParametersInfo(int a,int b,string c,int d);}' > "!WP_PS!"
-    echo [WP]::SystemParametersInfo(0x0014,0,'%WP_DST%',3) >> "!WP_PS!"
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "$j=Start-Job -ScriptBlock{powershell -NoProfile -ExecutionPolicy Bypass -File '%TEMP%\set_wallpaper.ps1'};if(-not(Wait-Job $j -Timeout 15)){Stop-Job $j;Remove-Job $j}else{Remove-Job $j}" >nul 2>&1
-    del /f /q "!WP_PS!" >nul 2>&1
-    echo   - Wallpaper set: PreCore Lab branding
+    echo   - Wallpaper will be applied after cleanup phase
 ) else (
     echo   - Wallpaper logo-nen.png not found, skipping
 )
@@ -790,16 +768,41 @@ echo  [8/11] Cleaning Up Files...
 echo ============================================================
 echo [8/11] Cleaning Up Files... >> "%LOG%"
 
-:: Wallpapers (keep PCL custom wallpaper)
+:: Wallpapers (delete stock wallpapers, keep PCL custom wallpaper)
 if exist "%SystemRoot%\Web\Wallpaper" (
     for /d %%W in ("%SystemRoot%\Web\Wallpaper\*") do (
-        echo %%~nxW | findstr /i "PCL" >nul 2>&1
-        if !errorlevel! neq 0 rmdir /s /q "%%W" >nul 2>&1
+        set "_SKIP=0"
+        echo "%%~nxW" | findstr /i "PCL" >nul 2>&1 && set "_SKIP=1"
+        if "!_SKIP!"=="0" rmdir /s /q "%%W" >nul 2>&1
     )
 )
 if exist "%SystemRoot%\Web\4K" rmdir /s /q "%SystemRoot%\Web\4K" >nul 2>&1
 if exist "%SystemRoot%\Web\Screen" rmdir /s /q "%SystemRoot%\Web\Screen" >nul 2>&1
-echo   - Cleaned wallpapers (kept PCL branding)
+echo   - Cleaned stock wallpapers (kept PCL branding)
+
+:: ---- APPLY CUSTOM WALLPAPER NOW (after stock wallpapers are deleted) ----
+set "WP_SRC=C:\InstallScripts\logo-nen.png"
+set "WP_DST=%SystemRoot%\Web\Wallpaper\PCL\logo-nen.png"
+if exist "%WP_SRC%" (
+    if not exist "%SystemRoot%\Web\Wallpaper\PCL" mkdir "%SystemRoot%\Web\Wallpaper\PCL" >nul 2>&1
+    copy /y "%WP_SRC%" "%WP_DST%" >nul 2>&1
+    :: Set wallpaper registry for current user
+    reg add "HKCU\Control Panel\Desktop" /v Wallpaper /t REG_SZ /d "%WP_DST%" /f >nul
+    reg add "HKCU\Control Panel\Desktop" /v WallpaperStyle /t REG_SZ /d 10 /f >nul
+    reg add "HKCU\Control Panel\Desktop" /v TileWallpaper /t REG_SZ /d 0 /f >nul
+    :: Set for default user profile
+    reg add "HKU\.DEFAULT\Control Panel\Desktop" /v Wallpaper /t REG_SZ /d "%WP_DST%" /f >nul 2>&1
+    reg add "HKU\.DEFAULT\Control Panel\Desktop" /v WallpaperStyle /t REG_SZ /d 10 /f >nul 2>&1
+    reg add "HKU\.DEFAULT\Control Panel\Desktop" /v TileWallpaper /t REG_SZ /d 0 /f >nul 2>&1
+    :: Force via PersonalizationCSP (machine-wide policy)
+    reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP" /v DesktopImagePath /t REG_SZ /d "%WP_DST%" /f >nul 2>&1
+    reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP" /v DesktopImageUrl /t REG_SZ /d "%WP_DST%" /f >nul 2>&1
+    reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP" /v DesktopImageStatus /t REG_DWORD /d 1 /f >nul 2>&1
+    :: Force via Group Policy
+    reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\Personalization" /v DesktopImagePath /t REG_SZ /d "%WP_DST%" /f >nul 2>&1
+    reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\Personalization" /v DesktopImageStyle /t REG_DWORD /d 10 /f >nul 2>&1
+    echo   - Custom wallpaper copied and registry set
+)
 
 :: Screensavers
 del /f /q "%SystemRoot%\System32\*.scr" >nul 2>&1
@@ -1602,6 +1605,15 @@ echo   Audio: KEPT ON (disable in LDPlayer)
 echo   Log: %LOG%
 echo  =============================================
 echo.
+
+:: ---- FINAL: Apply wallpaper now (desktop should be ready) ----
+set "WP_DST=%SystemRoot%\Web\Wallpaper\PCL\logo-nen.png"
+if exist "%WP_DST%" (
+    echo [*] Applying wallpaper...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+        "Add-Type 'using System;using System.Runtime.InteropServices;public class WP{[DllImport(\"user32.dll\",CharSet=CharSet.Unicode)]public static extern int SystemParametersInfo(int a,int b,string c,int d);}';[WP]::SystemParametersInfo(0x0014,0,'%WP_DST%',3)" >nul 2>&1
+    echo   - Wallpaper applied: PreCore Lab
+)
 
 :: endlocal before self-delete (setlocal cleanup)
 endlocal
