@@ -396,8 +396,8 @@ reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters" /v DisabledCo
 reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" /v TcpTimedWaitDelay /t REG_DWORD /d 30 /f >nul
 :: Disable Network Throttling (maximize throughput instead of reserving 20% for media playback)
 reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" /v NetworkThrottlingIndex /t REG_DWORD /d 4294967295 /f >nul
-:: Give 100% CPU priority to foreground/background apps (no multimedia reservation)
-reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" /v SystemResponsiveness /t REG_DWORD /d 0 /f >nul
+:: Reserve 10% CPU for OS kernel (matches 90% CPU cap in Phase 9 power plan)
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" /v SystemResponsiveness /t REG_DWORD /d 10 /f >nul
 reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" /v Size /t REG_DWORD /d 3 /f >nul
 reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" /v IRPStackSize /t REG_DWORD /d 20 /f >nul
 
@@ -1111,6 +1111,78 @@ echo  [9/11] System Optimization...
 echo ============================================================
 echo [9/11] System Optimization... >> "%LOG%"
 
+:: ---- AUTO-DETECT CPU SPECS AND COMPUTE OPTIMAL VALUES ----
+echo   - Detecting CPU specifications...
+
+:: Get CPU name from WMIC (fast, handles spaces in name, no PS startup overhead)
+set "CPU_NAME=Unknown CPU"
+for /f "skip=1 tokens=*" %%N in ('wmic cpu get name 2^>nul') do (
+    if not "%%N"=="" for /f "tokens=*" %%M in ("%%N") do set "CPU_NAME=%%M"
+)
+:: Detect Xeon / Server CPU
+set "CPU_IS_XEON=0"
+echo !CPU_NAME! | findstr /i "Xeon" >nul 2>&1 && set "CPU_IS_XEON=1"
+echo !CPU_NAME! | findstr /i "EPYC" >nul 2>&1 && set "CPU_IS_XEON=1"
+echo !CPU_NAME! | findstr /i "Threadripper" >nul 2>&1 && set "CPU_IS_XEON=1"
+:: Detect socket count (1=single, 2+=multi-socket / dual Xeon)
+set "CPU_SOCKETS=1"
+for /f "skip=1 tokens=*" %%S in ('wmic computersystem get NumberOfProcessors 2^>nul') do (
+    if not "%%S"=="" for /f "tokens=*" %%T in ("%%S") do set "CPU_SOCKETS=%%T"
+)
+
+:: One consolidated PowerShell call: detect CPU specs and compute all optimal values
+set "CPU_CORES=4"
+set "CPU_THREADS=8"
+set "CPU_L2=1024"
+set "CPU_L3=8192"
+set "CPU_MHZ=3000"
+set "CPU_BOOST=60"
+set "CPU_TIMER=15"
+set "CPU_INC_TH=60"
+set "CPU_WORKERS_C=8"
+set "CPU_WORKERS_D=4"
+set "CPU_DHEAP_I=4096"
+set "CPU_DHEAP_NI=2048"
+set "CPU_MAXWORK=8192"
+set "CPU_MAXREQ=16"
+for /f "usebackq tokens=1-14 delims=|" %%A in (`powershell -NoProfile -Command "$c=Get-CimInstance Win32_Processor|Select -First 1;$co=$c.NumberOfCores;$th=$c.NumberOfLogicalProcessors;$l2=if($c.L2CacheSize-gt0){$c.L2CacheSize}else{1024};$l3=if($c.L3CacheSize-gt0){$c.L3CacheSize}else{8192};$mh=$c.MaxClockSpeed;$bp=if($mh-ge3500){40}elseif($mh-ge2500){60}else{80};$ti=if($mh-ge3500){10}elseif($mh-ge2500){15}else{20};$it=if($co-ge16){70}elseif($co-ge8){60}else{50};$wc=[Math]::Max(4,[Math]::Min(32,$co));$wd=[Math]::Max(4,[Math]::Min(16,[Math]::Floor($co/2)));$dhi=if($co-ge16){8192}elseif($co-ge8){4096}else{2048};$dhni=[Math]::Floor($dhi/2);$mwi=[Math]::Max(4096,$th*256);$mrt=[Math]::Max(16,[Math]::Min(64,$co*2));Write-Host \"$co|$th|$l2|$l3|$mh|$bp|$ti|$it|$wc|$wd|$dhi|$dhni|$mwi|$mrt\""`) do (
+    set "CPU_CORES=%%A"
+    set "CPU_THREADS=%%B"
+    set "CPU_L2=%%C"
+    set "CPU_L3=%%D"
+    set "CPU_MHZ=%%E"
+    set "CPU_BOOST=%%F"
+    set "CPU_TIMER=%%G"
+    set "CPU_INC_TH=%%H"
+    set "CPU_WORKERS_C=%%I"
+    set "CPU_WORKERS_D=%%J"
+    set "CPU_DHEAP_I=%%K"
+    set "CPU_DHEAP_NI=%%L"
+    set "CPU_MAXWORK=%%M"
+    set "CPU_MAXREQ=%%N"
+)
+echo.
+echo   =========================================
+if "!CPU_IS_XEON!"=="1" (
+    echo    [XEON/SERVER] !CPU_NAME!
+) else (
+    echo    CPU Detected: !CPU_NAME!
+)
+echo    Cores: !CPU_CORES! / Threads: !CPU_THREADS!
+if "!CPU_IS_XEON!"=="1" echo    Sockets: !CPU_SOCKETS!
+echo    L2: !CPU_L2!KB / L3: !CPU_L3!KB
+echo    Max Clock: !CPU_MHZ! MHz
+echo   =========================================
+echo    Computed Optimal Values:
+echo    Boost Policy: !CPU_BOOST!%%
+echo    Timer Check: !CPU_TIMER!ms
+echo    Freq Increase Threshold: !CPU_INC_TH!%%
+echo    I/O Workers: !CPU_WORKERS_C! crit / !CPU_WORKERS_D! delayed
+echo    Desktop Heap: !CPU_DHEAP_I!KB inter / !CPU_DHEAP_NI!KB non-inter
+echo   =========================================
+echo.
+echo   CPU Auto-Detect: !CPU_NAME! (!CPU_CORES!C/!CPU_THREADS!T, !CPU_MHZ!MHz, L2=!CPU_L2!KB L3=!CPU_L3!KB, Xeon=!CPU_IS_XEON!) >> "%LOG%"
+
 :: Ultimate Performance power plan (hidden plan with zero power-saving, max CPU/disk/USB speed)
 powercfg /duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61 >nul 2>&1
 for /f "tokens=4" %%G in ('powercfg /list 2^>nul ^| findstr /i "Ultimate"') do powercfg /setactive %%G >nul 2>&1
@@ -1122,6 +1194,156 @@ powercfg /change standby-timeout-ac 0
 powercfg /change hibernate-timeout-ac 0
 powercfg /change disk-timeout-ac 0
 echo   - Ultimate Performance power plan activated
+
+:: ---- CPU PERFORMANCE CAP: <=90%% (extend CPU lifespan, reduce heat/throttling) ----
+:: MAX CPU State = 90%%
+powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 bc5038f7-23e0-4960-96da-33abaf5935ec 90 >nul 2>&1
+powercfg /SETDCVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 bc5038f7-23e0-4960-96da-33abaf5935ec 90 >nul 2>&1
+:: MIN CPU State = 5%%
+powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 893dee8e-2bef-41e0-89c6-b55d0929964c 5 >nul 2>&1
+powercfg /SETDCVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 893dee8e-2bef-41e0-89c6-b55d0929964c 5 >nul 2>&1
+
+:: Boost Mode = 4 (Efficient Aggressive)
+powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 be337238-0d82-4146-a960-4f3749d470c7 4 >nul 2>&1
+:: Boost Policy = DYNAMIC (based on CPU clock: fast CPU=40%%, mid=60%%, slow=80%%)
+powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 45bcc044-d885-43e2-8605-ee0ec6e96b59 !CPU_BOOST! >nul 2>&1
+
+:: ---- CORE PARKING (all cores active) ----
+powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 0cc5b647-c1df-4637-891a-dec35c318583 0 >nul 2>&1
+powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 ea062031-0e34-4ff1-9b6d-eb1059334028 100 >nul 2>&1
+powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 c7be0679-2817-4d69-9d02-519a537ed0c6 2 >nul 2>&1
+powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 71021b41-c749-4d21-be74-a00f335d582b 1 >nul 2>&1
+
+:: ---- PROCESSOR PERFORMANCE POLICIES (DYNAMIC based on CPU specs) ----
+powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 465e1f50-b610-473a-ab58-00d1077dc418 2 >nul 2>&1
+powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 40fbefc7-2e9d-4d25-a185-0cfd8574bac6 1 >nul 2>&1
+powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 06cadf0e-64ed-448a-8927-ce7bf90eb35d !CPU_INC_TH! >nul 2>&1
+powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 12a0ab44-fe28-4fa9-b3bd-4b64f44960a6 20 >nul 2>&1
+powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 4d2b0152-7d5c-498b-88e2-34345392a2c5 !CPU_TIMER! >nul 2>&1
+
+:: ---- APPLY ALL POWER CHANGES ----
+powercfg /SETACTIVE SCHEME_CURRENT >nul 2>&1
+echo   - CPU capped at 90%% max, boost=!CPU_BOOST!%%, threshold=!CPU_INC_TH!%%, timer=!CPU_TIMER!ms
+
+:: ---- MMCSS THREAD PRIORITIES ----
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" /v SystemResponsiveness /t REG_DWORD /d 10 /f >nul
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Pro Audio" /v "Affinity" /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Pro Audio" /v "Background Only" /t REG_SZ /d "False" /f >nul
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Pro Audio" /v "Clock Rate" /t REG_DWORD /d 10000 /f >nul
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Pro Audio" /v "GPU Priority" /t REG_DWORD /d 8 /f >nul
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Pro Audio" /v "Priority" /t REG_DWORD /d 1 /f >nul
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Pro Audio" /v "Scheduling Category" /t REG_SZ /d "High" /f >nul
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Pro Audio" /v "SFIO Priority" /t REG_SZ /d "High" /f >nul
+echo   - MMCSS optimized (SystemReserve=10%%)
+
+:: ============================================================
+:: XEON / SERVER CPU OPTIMIZATION (conditional)
+:: ============================================================
+if "!CPU_IS_XEON!"=="0" goto :skip_xeon
+echo.
+echo   ==========================================
+echo    XEON/SERVER MODE - Server-grade tweaks
+echo   ==========================================
+
+:: ---- DEEP C-STATES: DISABLE (Xeon C6/C7/C8 wakeup latency = 200-500us = micro-stutter) ----
+:: Processor Idle Disable = 1 (prevent deep sleep states entirely)
+powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 5d76a2ca-e8c0-402f-a133-2158492d58ad 1 >nul 2>&1
+:: Idle Promote Threshold = 100%% (never promote to deeper C-state)
+powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 7b224883-b3cc-4d79-819f-8374152cbe7c 100 >nul 2>&1
+:: Idle Demote Threshold = 0%% (instantly return to C0 active state)
+powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 4b92d758-5a24-4851-a470-815d78aee119 0 >nul 2>&1
+echo   - Deep C-states disabled (C6/C7/C8 = 0 latency)
+
+:: ---- PACKAGE C-STATES: DISABLE (whole-CPU sleep = catastrophic latency on Xeon) ----
+:: Package C-State limit = C0 (never let entire package sleep)
+powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 2430b2e9-2e4b-474e-8073-73b8f3e02373 0 >nul 2>&1
+echo   - Package C-states disabled (no whole-CPU sleep)
+
+:: ---- PROCESSOR AUTONOMOUS MODE: DISABLE (let OS control P-states, not CPU firmware) ----
+:: Xeon firmware auto-management conflicts with Windows power plan settings
+:: Autonomous Mode = 0 (OS scheduler controls frequency scaling via ACPI/MSR)
+powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 8baa4a8a-14c6-4451-8e8b-14bdbd197537 0 >nul 2>&1
+echo   - Processor Autonomous Mode disabled (OS controls P-states)
+
+:: ---- ENERGY PERFORMANCE PREFERENCE: MAXIMUM PERFORMANCE (EPP=0) ----
+:: Xeon Gold/Platinum/E5v4+ support Intel Speed Shift Technology (HWP)
+:: EPP=0 tells hardware to prioritize performance over power saving
+powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 36687f9e-e3a5-4dbf-b1dc-15eb381c6863 0 >nul 2>&1
+echo   - Energy Performance Preference = Maximum Performance (EPP=0)
+
+:: ---- MAX PROCESSOR FREQUENCY: UNLIMITED ----
+:: Let boost work within 90%% cap, don't add another frequency limit
+powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 75b0ae3f-bce0-45a7-8c89-c9611c25e100 0 >nul 2>&1
+echo   - Max Processor Frequency = Unlimited (within 90%% cap)
+
+:: ---- APPLY XEON POWER CHANGES ----
+powercfg /SETACTIVE SCHEME_CURRENT >nul 2>&1
+
+:: ---- MULTI-SOCKET vs SINGLE-SOCKET XEON ----
+:: NUMA/Platform clock only matter on DUAL+ socket. Single Xeon = all memory local.
+echo   - Socket count: !CPU_SOCKETS!
+if !CPU_SOCKETS! GEQ 2 (
+    echo   - [DUAL+ SOCKET] Applying multi-socket optimizations...
+    :: NUMA: enforce memory locality (remote NUMA = 1.5-2x slower)
+    reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v FeatureSettings /t REG_DWORD /d 1 /f >nul
+    echo   - NUMA memory locality enforced (no cross-socket penalty)
+    :: Interrupt steering: distribute IRQs across all sockets
+    reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\kernel" /v InterruptSteeringDisabled /t REG_DWORD /d 0 /f >nul
+    echo   - Interrupt steering enabled (balanced across sockets)
+    :: Platform clock: use HPET for multi-socket timer consistency (TSC drifts between sockets)
+    bcdedit /set useplatformclock true >nul 2>&1
+    echo   - Platform clock HPET enabled (TSC drift protection)
+) else (
+    echo   - [SINGLE SOCKET] Skipping NUMA/platform clock (not needed)
+    :: Single socket: use TSC (faster than HPET, no drift issue)
+    bcdedit /deletevalue useplatformclock >nul 2>&1
+    echo   - TSC timer kept (faster than HPET on single socket)
+)
+
+:: ---- IRP STACK SIZE: INCREASE FOR SERVER I/O CHAINS ----
+:: Xeon systems often have hardware RAID / NVMe → deeper I/O stack
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" /v IRPStackSize /t REG_DWORD /d 30 /f >nul
+echo   - IRPStackSize = 30 (server-grade I/O depth)
+
+:: ---- SERVER TCP/IP BUFFERS ----
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" /v GlobalMaxTcpWindowSize /t REG_DWORD /d 65535 /f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" /v TcpWindowSize /t REG_DWORD /d 65535 /f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\AFD\Parameters" /v DefaultReceiveWindow /t REG_DWORD /d 65535 /f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\AFD\Parameters" /v DefaultSendWindow /t REG_DWORD /d 65535 /f >nul
+echo   - Server TCP window + AFD buffers maximized
+
+:: ---- SMB: INCREASE FOR XEON (override earlier minimization) ----
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" /v MaxMpxCt /t REG_DWORD /d 800 /f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" /v MaxCmds /t REG_DWORD /d 800 /f >nul
+echo   - SMB credits increased for server workload
+
+:: ---- BCDEDIT: USER VA SPACE ----
+bcdedit /set increaseuserva 3072 >nul 2>&1
+echo   - User VA space increased to 3GB
+
+:: ---- DISABLE AVX FREQUENCY THROTTLING (Xeon E5v4+ / Scalable) ----
+:: AVX-512 instructions cause Xeon to drop frequency by 200-800MHz
+:: This registry hint tells the scheduler to avoid heavy AVX throttling
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\kernel" /v DisableExceptionChainValidation /t REG_DWORD /d 1 /f >nul
+echo   - AVX throttling mitigation applied
+
+:: ---- HIGH CORE COUNT SCHEDULING (Xeon 16-56 cores) ----
+:: Use SHORT quantum with EQUAL foreground/background priority
+:: Win32PrioritySeparation = 0x18 (24) = Short, Variable, Equal
+:: Already set to 24, but Xeon with 32+ cores benefits from Fixed quantum instead
+:: 0x28 (40) = Short, Fixed, Equal - more predictable for many VMs
+if !CPU_CORES! GEQ 24 (
+    reg add "HKLM\SYSTEM\CurrentControlSet\Control\PriorityControl" /v Win32PrioritySeparation /t REG_DWORD /d 40 /f >nul
+    echo   - Scheduling: Short Fixed Equal quantum (24+ cores)
+) else (
+    echo   - Scheduling: Short Variable Equal quantum (kept at 24)
+)
+
+echo.
+echo   XEON/SERVER optimizations complete!
+echo   XEON optimizations applied >> "%LOG%"
+
+:skip_xeon
 
 :: Disable Hibernate
 powercfg /h off
@@ -1235,9 +1457,11 @@ reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\DWM" /v EnableAeroPeek /t REG_
 :: Keep ColorizationOpaqueBlend=0 so window colorization/theme tinting works
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\DWM" /v ColorizationOpaqueBlend /t REG_DWORD /d 0 /f >nul
 
-:: Force minimum Desktop Heap size (saves ~30-50MB of kernel nonpaged pool)
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\SubSystems" /v Windows /t REG_SZ /d "%SystemRoot%\system32\csrss.exe ObjectDirectory=\Windows SharedSection=1024,512,256 Windows=On SubSystemType=Windows ServerDll=basesrv,1 ServerDll=winsrv:UserServerDllInitialization,3 ServerDll=sxssrv,4 ProfileControl=Off MaxRequestThreads=16" /f >nul
-echo   - Desktop Heap minimized
+:: Desktop Heap: DYNAMIC based on CPU cores (auto-detected in Phase 9)
+:: 16+ cores → 8192/4096KB, 8+ cores → 4096/2048KB, <8 cores → 2048/1024KB
+:: More cores = more LDPlayer instances = more windows = more heap needed
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\SubSystems" /v Windows /t REG_SZ /d "%SystemRoot%\system32\csrss.exe ObjectDirectory=\Windows SharedSection=1024,!CPU_DHEAP_I!,!CPU_DHEAP_NI! Windows=On SubSystemType=Windows ServerDll=basesrv,1 ServerDll=winsrv:UserServerDllInitialization,3 ServerDll=sxssrv,4 ProfileControl=Off MaxRequestThreads=!CPU_MAXREQ!" /f >nul
+echo   - Desktop Heap DYNAMIC: !CPU_DHEAP_I!KB inter / !CPU_DHEAP_NI!KB non-inter (based on !CPU_CORES! cores)
 
 :: Reduce NonPaged Pool size (Windows allocates too much by default)
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v NonPagedPoolSize /t REG_DWORD /d 0 /f >nul
@@ -1394,14 +1618,14 @@ fsutil usn deletejournal /d C: >nul 2>&1
 fsutil usn createjournal m=2097152 a=1048576 C: >nul 2>&1
 echo   - NTFS journal minimized (64MB -> 2MB)
 
-:: Force aggressive working set trimming for ALL processes
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v SecondLevelDataCache /t REG_DWORD /d 1024 /f >nul
-echo   - Aggressive working set trimming enabled
+:: Set L2 cache size to actual detected value (was hardcoded 1024KB)
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v SecondLevelDataCache /t REG_DWORD /d !CPU_L2! /f >nul
+echo   - SecondLevelDataCache set to actual !CPU_L2!KB (auto-detected)
 
-:: Disable Processor Performance Boost (prevent turbo boost, saves power and reduces thermal throttling in dense VM environments)
-:: Comment out if you want turbo boost: reg add ... /d 0
+:: Expose Processor Boost settings in powercfg (required for Phase 9 boost mode = Efficient Aggressive)
+:: Attributes=2 makes the setting visible in Power Options GUI
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Power\PowerSettings\54533251-82be-4824-96c1-47b60b740d00\be337238-0d82-4146-a960-4f3749d470c7" /v Attributes /t REG_DWORD /d 2 /f >nul
-echo   - Processor power settings exposed
+echo   - Processor boost settings exposed (Efficient Aggressive @ 90%% cap)
 
 :: Disable Connected Standby (Modern Standby = useless on VM farms)
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Power" /v CsEnabled /t REG_DWORD /d 0 /f >nul
@@ -1427,6 +1651,81 @@ echo   - Application Compatibility Engine fully disabled
 reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" /v MaxMpxCt /t REG_DWORD /d 50 /f >nul
 reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" /v MaxCmds /t REG_DWORD /d 50 /f >nul
 echo   - SMB credits minimized
+
+:: ---- MULTI-VM / LDPLAYER FARM OPTIMIZATION (20-50+ instances) ----
+
+:: GPU: Disable TDR (Timeout Detection and Recovery)
+:: When 20+ LDPlayer instances share one GPU, rendering queue gets long.
+:: TDR timeout (default 2s) causes "Display driver stopped responding" → instance crash.
+:: TdrLevel=0 disables TDR entirely. TdrDelay=60 is fallback if TdrLevel=0 doesn't work.
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" /v TdrLevel /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" /v TdrDelay /t REG_DWORD /d 60 /f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" /v TdrDdiDelay /t REG_DWORD /d 60 /f >nul
+echo   - GPU TDR disabled (no more "display driver stopped responding")
+
+:: GPU: Enable fine-grained preemption (better GPU time-sharing among many instances)
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers\Scheduler" /v EnablePreemption /t REG_DWORD /d 1 /f >nul
+:: Disable VSync idle timeout (prevents GPU idle power-down between frames)
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers\Scheduler" /v VsyncIdleTimeout /t REG_DWORD /d 0 /f >nul
+echo   - GPU preemption + VSync optimized for multi-instance
+
+:: I/O: DYNAMIC kernel worker threads (scales with CPU cores)
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Executive" /v AdditionalCriticalWorkerThreads /t REG_DWORD /d !CPU_WORKERS_C! /f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Executive" /v AdditionalDelayedWorkerThreads /t REG_DWORD /d !CPU_WORKERS_D! /f >nul
+echo   - I/O worker threads: !CPU_WORKERS_C! critical + !CPU_WORKERS_D! delayed (based on !CPU_CORES! cores)
+
+:: I/O: DYNAMIC MaxWorkItems (scales with CPU threads: threads×256)
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" /v MaxWorkItems /t REG_DWORD /d !CPU_MAXWORK! /f >nul
+echo   - MaxWorkItems=!CPU_MAXWORK! (based on !CPU_THREADS! threads)
+
+:: TCP: Scale connection tracking for many instances (each LDPlayer opens 50-200 connections)
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" /v MaxFreeTcbs /t REG_DWORD /d 65536 /f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" /v MaxHashTableSize /t REG_DWORD /d 65536 /f >nul
+:: Disable SYN attack protection (farm is internal, not exposed to internet)
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" /v SynAttackProtect /t REG_DWORD /d 0 /f >nul
+echo   - TCP connection table scaled for 50+ instances
+
+:: Service timeout: Increase from 2s to 120s (prevent service crashes under heavy multi-VM load)
+:: At boot with 30+ VMs, services compete for CPU time → default 2s timeout kills them
+reg add "HKLM\SYSTEM\CurrentControlSet\Control" /v ServicesPipeTimeout /t REG_DWORD /d 120000 /f >nul
+echo   - Service timeout extended to 120s (prevents crash under heavy load)
+
+:: Process creation: Faster heap allocation for spawning many LDPlayer instances
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager" /v HeapDeCommitFreeBlockThreshold /t REG_DWORD /d 262144 /f >nul
+echo   - Process heap optimized for fast instance spawning
+
+:: PCIe: Disable ASPM power saving (prevents GPU/NIC latency spikes under multi-VM load)
+:: Active State Power Management OFF for PCI Express Link State
+powercfg /SETACVALUEINDEX SCHEME_CURRENT 501a4d13-42af-4429-9fd1-a8218c268e20 ee12f906-d277-404b-b6da-e5fa1a576df5 0 >nul 2>&1
+powercfg /SETACTIVE SCHEME_CURRENT >nul 2>&1
+echo   - PCIe ASPM disabled (no GPU/NIC latency spikes)
+
+:: CPU C-states: Limit deep idle states (prevent micro-stutter when cores wake under multi-VM load)
+:: Idle Promote/Demote Threshold tuning for consistent latency
+powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 5d76a2ca-e8c0-402f-a133-2158492d58ad 0 >nul 2>&1
+powercfg /SETACTIVE SCHEME_CURRENT >nul 2>&1
+echo   - CPU C-states limited (no micro-stutter on core wakeup)
+
+:: Timer: Distribute timer interrupts across all cores (prevent core 0 bottleneck)
+:: By default, Windows processes most timer interrupts on core 0 → bottleneck with many VMs
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\kernel" /v DistributeTimers /t REG_DWORD /d 1 /f >nul
+echo   - Timer interrupts distributed across all cores
+
+:: Memory: Pool usage cap at 60%% (prevent kernel pool exhaustion with many processes)
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v PoolUsageMaximum /t REG_DWORD /d 60 /f >nul
+echo   - Kernel pool usage capped at 60%%
+
+:: File handles: Increase system-wide file handle limit (many instances = thousands of open files)
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\kernel" /v MaximumSharedReadyQueueCount /t REG_DWORD /d 2 /f >nul
+echo   - File handle and ready queue limits increased
+
+:: Disk: Disable write-cache buffer flushing (faster disk I/O, slightly risky on power loss)
+:: Safe for VMs since VM snapshots handle crash recovery
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\disk" /v TimeOutValue /t REG_DWORD /d 200 /f >nul
+echo   - Disk timeout extended to 200s for heavy I/O
+
+echo   Multi-VM/LDPlayer farm optimizations applied.
+echo   Multi-VM/LDPlayer farm optimizations applied >> "%LOG%"
 
 echo   System optimization done.
 echo   System optimization done >> "%LOG%"

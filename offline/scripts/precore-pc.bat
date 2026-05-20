@@ -1,12 +1,18 @@
 @echo off
 :: ============================================================
-::  PreCore PC - System Maintenance Tool
+::  PreCores PC - System Maintenance Tool
 ::  PreCore Lab (c) 2026
 :: ============================================================
-title PreCore PC - System Maintenance
-color 0B
 setlocal EnableExtensions EnableDelayedExpansion
-mode con: cols=72 lines=45
+
+:: --- Lock console window size and disable resizing ---
+title PreCores PC - System Maintenance
+color 0B
+mode con: cols=62 lines=40
+:: Disable Quick Edit + Insert mode, lock window size via registry
+reg add "HKCU\Console\PreCores PC - System Maintenance" /v WindowSize /t REG_DWORD /d 0x00280042 /f >nul 2>&1
+reg add "HKCU\Console\PreCores PC - System Maintenance" /v ScreenBufferSize /t REG_DWORD /d 0x012C0042 /f >nul 2>&1
+reg add "HKCU\Console\PreCores PC - System Maintenance" /v QuickEdit /t REG_DWORD /d 0 /f >nul 2>&1
 
 :: --- Admin check ---
 net session >nul 2>&1
@@ -19,31 +25,39 @@ if %errorlevel% neq 0 (
 :main_menu
 cls
 echo.
-echo  ╔════════════════════════════════════════════════════════════╗
-echo  ║             PreCore PC - System Maintenance                ║
-echo  ║                    PreCore Lab 2026                        ║
-echo  ╠════════════════════════════════════════════════════════════╣
-echo  ║                                                            ║
-echo  ║   [1]  Clean Junk Files + Cache                            ║
-echo  ║   [2]  Clean Browser Data (Chrome/Edge)                    ║
-echo  ║   [3]  Reclaim RAM (Trim Working Sets)                     ║
-echo  ║   [4]  Flush DNS + Reset Network                           ║
-echo  ║   [5]  Disk Cleanup (Windows Built-in)                     ║
-echo  ║   [6]  Optimize Drive (TRIM/Defrag)                        ║
-echo  ║   [7]  System Info                                         ║
-echo  ║   [8]  Kill Bloatware Processes                            ║
-echo  ║   [9]  Fix Common Issues                                   ║
-echo  ║   [0]  ALL-IN-ONE (1+2+3+4+8)                              ║
-echo  ║                                                            ║
-echo  ║   [A]  Startup Manager                                     ║
-echo  ║   [B]  Find Large Files (top 20)                           ║
-echo  ║   [C]  Auto Shutdown Timer                                 ║
-echo  ║   [D]  LDPlayer Tools                                      ║
-echo  ║   [E]  Restart Explorer                                    ║
-echo  ║                                                            ║
-echo  ║   [Q]  Exit                                                ║
-echo  ║                                                            ║
-echo  ╚════════════════════════════════════════════════════════════╝
+echo  +------------------------------------------------------------+
+echo  :                                                            :
+echo  :          ########  ########  ##                            :
+echo  :          ##    ##  ##        ##                            :
+echo  :          ########  ##        ##                            :
+echo  :          ##        ##        ##                            :
+echo  :          ##        ########  ########                      :
+echo  :                                                            :
+echo  :            PreCores PC - System Maintenance                :
+echo  :                  PreCore Lab 2026                           :
+echo  :                                                            :
+echo  +------------------------------------------------------------+
+echo  :                                                            :
+echo  :   [1]  Clean Junk Files + Cache                            :
+echo  :   [2]  Clean Browser Data (Chrome/Edge)                    :
+echo  :   [3]  Reclaim RAM (Trim Working Sets)                     :
+echo  :   [4]  Flush DNS + Reset Network                           :
+echo  :   [5]  Disk Cleanup (Windows Built-in)                     :
+echo  :   [6]  Optimize Drive (TRIM/Defrag)                        :
+echo  :   [7]  System Info                                         :
+echo  :   [8]  Kill Bloatware Processes                            :
+echo  :   [9]  Fix Common Issues                                   :
+echo  :   [0]  ALL-IN-ONE (1+2+3+4+8)                              :
+echo  :                                                            :
+echo  :   [A]  Startup Manager                                     :
+echo  :   [B]  Find Large Files (top 20)                           :
+echo  :   [C]  Auto Shutdown Timer                                 :
+echo  :   [D]  LDPlayer Tools                                      :
+echo  :   [E]  Restart Explorer                                    :
+echo  :                                                            :
+echo  :   [Q]  Exit                                                :
+echo  :                                                            :
+echo  +------------------------------------------------------------+
 echo.
 set "choice="
 set /p "choice=  Select [0-9/A-E/Q]: "
@@ -71,9 +85,9 @@ goto :main_menu
 :clean_junk
 cls
 echo.
-echo  ══════════════════════════════════════════════════════════
-echo   [1] Cleaning Junk Files + Cache...
-echo  ══════════════════════════════════════════════════════════
+echo  +----------------------------------------------------------+
+echo  :  [1] Cleaning Junk Files + Cache...                      :
+echo  +----------------------------------------------------------+
 echo.
 set "FREED=0"
 
@@ -144,9 +158,9 @@ echo       Done.
 
 for /f "tokens=3" %%S in ('dir C:\ 2^>nul ^| findstr /i "bytes free"') do set "FREE=%%S"
 echo.
-echo   ════════════════════════════════════════════════
-echo    DONE! Free disk space: %FREE% bytes
-echo   ════════════════════════════════════════════════
+echo  +--------------------------------------------------+
+echo  :  DONE! Free disk space: %FREE% bytes
+echo  +--------------------------------------------------+
 echo.
 pause
 goto :main_menu
@@ -157,9 +171,9 @@ goto :main_menu
 :clean_browser
 cls
 echo.
-echo  ══════════════════════════════════════════════════════════
-echo   [2] Cleaning Browser Cache...
-echo  ══════════════════════════════════════════════════════════
+echo  +----------------------------------------------------------+
+echo  :  [2] Cleaning Browser Cache...                           :
+echo  +----------------------------------------------------------+
 echo.
 
 :: Kill browsers first
@@ -197,9 +211,9 @@ goto :main_menu
 :reclaim_ram
 cls
 echo.
-echo  ══════════════════════════════════════════════════════════
-echo   [3] Reclaiming RAM...
-echo  ══════════════════════════════════════════════════════════
+echo  +----------------------------------------------------------+
+echo  :  [3] Reclaiming RAM...                                   :
+echo  +----------------------------------------------------------+
 echo.
 
 :: Show current RAM usage
@@ -238,9 +252,9 @@ goto :main_menu
 :flush_dns
 cls
 echo.
-echo  ══════════════════════════════════════════════════════════
-echo   [4] Network Reset...
-echo  ══════════════════════════════════════════════════════════
+echo  +----------------------------------------------------------+
+echo  :  [4] Network Reset...                                    :
+echo  +----------------------------------------------------------+
 echo.
 
 echo   [*] Flushing DNS cache...
@@ -276,9 +290,9 @@ goto :main_menu
 :disk_cleanup
 cls
 echo.
-echo  ══════════════════════════════════════════════════════════
-echo   [5] Running Windows Disk Cleanup...
-echo  ══════════════════════════════════════════════════════════
+echo  +----------------------------------------------------------+
+echo  :  [5] Running Windows Disk Cleanup...                     :
+echo  +----------------------------------------------------------+
 echo.
 
 :: Pre-configure disk cleanup categories
@@ -307,9 +321,9 @@ goto :main_menu
 :optimize_drive
 cls
 echo.
-echo  ══════════════════════════════════════════════════════════
-echo   [6] Optimizing Drive...
-echo  ══════════════════════════════════════════════════════════
+echo  +----------------------------------------------------------+
+echo  :  [6] Optimizing Drive...                                 :
+echo  +----------------------------------------------------------+
 echo.
 
 echo   [*] Detecting drive type...
@@ -340,9 +354,9 @@ goto :main_menu
 :sys_info
 cls
 echo.
-echo  ══════════════════════════════════════════════════════════
-echo   [7] System Information
-echo  ══════════════════════════════════════════════════════════
+echo  +----------------------------------------------------------+
+echo  :  [7] System Information                                  :
+echo  +----------------------------------------------------------+
 echo.
 
 :: Computer Name
@@ -371,7 +385,7 @@ for /f "usebackq" %%U in (`powershell -NoProfile -Command "$u=(Get-Date)-(Get-Ci
 for /f "tokens=2 delims=:" %%I in ('ipconfig ^| findstr /i "IPv4" ^| findstr /v "169.254"') do echo   IP:         %%I
 
 echo.
-echo  ══════════════════════════════════════════════════════════
+echo  +----------------------------------------------------------+
 echo.
 pause
 goto :main_menu
@@ -382,9 +396,9 @@ goto :main_menu
 :kill_bloat
 cls
 echo.
-echo  ══════════════════════════════════════════════════════════
-echo   [8] Killing Bloatware Processes...
-echo  ══════════════════════════════════════════════════════════
+echo  +----------------------------------------------------------+
+echo  :  [8] Killing Bloatware Processes...                      :
+echo  +----------------------------------------------------------+
 echo.
 
 set "KILLED=0"
@@ -429,9 +443,9 @@ goto :main_menu
 :fix_issues
 cls
 echo.
-echo  ══════════════════════════════════════════════════════════
-echo   [9] Fix Common Issues
-echo  ══════════════════════════════════════════════════════════
+echo  +----------------------------------------------------------+
+echo  :  [9] Fix Common Issues                                   :
+echo  +----------------------------------------------------------+
 echo.
 echo   [A] Repair System Files (SFC)
 echo   [B] Repair Windows Image (DISM)
@@ -497,12 +511,12 @@ goto :fix_issues
 :all_in_one
 cls
 echo.
-echo  ══════════════════════════════════════════════════════════
-echo   [0] ALL-IN-ONE Cleanup...
-echo  ══════════════════════════════════════════════════════════
+echo  +----------------------------------------------------------+
+echo  :  [0] ALL-IN-ONE Cleanup...                               :
+echo  +----------------------------------------------------------+
 echo.
 
-echo  ── Step 1/4: Cleaning Junk Files ──
+echo  -- Step 1/4: Cleaning Junk Files --
 del /f /q /s "%SystemRoot%\Temp\*" >nul 2>&1
 for /d %%D in ("%SystemRoot%\Temp\*") do rmdir /s /q "%%D" >nul 2>&1
 del /f /q /s "%TEMP%\*" >nul 2>&1
@@ -515,7 +529,7 @@ if exist "%LOCALAPPDATA%\CrashDumps" rmdir /s /q "%LOCALAPPDATA%\CrashDumps" >nu
 del /f /q /s "%ProgramData%\Microsoft\Diagnosis\ETLLogs\AutoLogger\*" >nul 2>&1
 echo   Done.
 
-echo  ── Step 2/4: Cleaning Browser Cache ──
+echo  -- Step 2/4: Cleaning Browser Cache --
 taskkill /f /im chrome.exe >nul 2>&1
 taskkill /f /im msedge.exe >nul 2>&1
 timeout /t 1 /nobreak >nul
@@ -524,7 +538,7 @@ if exist "%LOCALAPPDATA%\Google\Chrome\User Data\Default\Code Cache" rmdir /s /q
 if exist "%LOCALAPPDATA%\Microsoft\Edge\User Data\Default\Cache" rmdir /s /q "%LOCALAPPDATA%\Microsoft\Edge\User Data\Default\Cache" >nul 2>&1
 echo   Done.
 
-echo  ── Step 3/4: Reclaiming RAM ──
+echo  -- Step 3/4: Reclaiming RAM --
 set "TRIM_PS=%TEMP%\pcl_trim.ps1"
 (
 echo $ErrorActionPreference='SilentlyContinue'
@@ -537,7 +551,7 @@ del /f /q "%TRIM_PS%" >nul 2>&1
 rundll32.exe advapi32.dll,ProcessIdleTasks >nul 2>&1
 echo   Done.
 
-echo  ── Step 4/4: Killing Bloatware + Flush DNS ──
+echo  -- Step 4/4: Killing Bloatware + Flush DNS --
 for %%P in (
     SearchApp.exe RuntimeBroker.exe MicrosoftEdgeUpdate.exe
     MusNotification.exe YourPhone.exe GameBarPresenceWriter.exe
@@ -549,10 +563,10 @@ echo   Done.
 
 echo.
 for /f "tokens=3" %%S in ('dir C:\ 2^>nul ^| findstr /i "bytes free"') do set "FREE=%%S"
-echo  ══════════════════════════════════════════════════════════
-echo   ALL-IN-ONE COMPLETE!
-echo   Free disk space: %FREE% bytes
-echo  ══════════════════════════════════════════════════════════
+echo  +----------------------------------------------------------+
+echo  :  ALL-IN-ONE COMPLETE!                                    :
+echo  :  Free disk space: %FREE% bytes
+echo  +----------------------------------------------------------+
 echo.
 pause
 goto :main_menu
@@ -560,12 +574,12 @@ goto :main_menu
 :quit
 cls
 echo.
-echo   Thank you for using PreCore PC!
+echo   Thank you for using PreCores PC!
 echo   PreCore Lab 2026
 echo.
 timeout /t 2 /nobreak >nul
 endlocal
-exit /b
+exit /b 0
 
 :: ============================================================
 :: [A] STARTUP MANAGER
@@ -573,11 +587,11 @@ exit /b
 :startup_mgr
 cls
 echo.
-echo  ══════════════════════════════════════════════════════════
-echo   [A] Startup Manager
-echo  ══════════════════════════════════════════════════════════
+echo  +----------------------------------------------------------+
+echo  :  [A] Startup Manager                                     :
+echo  +----------------------------------------------------------+
 echo.
-echo   ── HKCU Run (Current User) ──
+echo   -- HKCU Run (Current User) --
 set "CNT=0"
 for /f "tokens=1,2,*" %%A in ('reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" 2^>nul ^| findstr /i "REG_SZ REG_EXPAND_SZ"') do (
     set /a CNT+=1
@@ -585,14 +599,14 @@ for /f "tokens=1,2,*" %%A in ('reg query "HKCU\Software\Microsoft\Windows\Curren
     echo      %%C
 )
 echo.
-echo   ── HKLM Run (All Users) ──
+echo   -- HKLM Run (All Users) --
 for /f "tokens=1,2,*" %%A in ('reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" 2^>nul ^| findstr /i "REG_SZ REG_EXPAND_SZ"') do (
     set /a CNT+=1
     echo   !CNT!. %%A
     echo      %%C
 )
 echo.
-echo   ── Startup Folder ──
+echo   -- Startup Folder --
 if exist "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup" (
     for %%F in ("%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\*") do (
         set /a CNT+=1
@@ -628,9 +642,9 @@ goto :startup_mgr
 :large_files
 cls
 echo.
-echo  ══════════════════════════════════════════════════════════
-echo   [B] Finding Top 20 Largest Files on C:\...
-echo  ══════════════════════════════════════════════════════════
+echo  +----------------------------------------------------------+
+echo  :  [B] Finding Top 20 Largest Files on C:\...              :
+echo  +----------------------------------------------------------+
 echo.
 echo   Scanning... (this may take 30-60 seconds)
 echo.
@@ -658,9 +672,9 @@ goto :main_menu
 :auto_shutdown
 cls
 echo.
-echo  ══════════════════════════════════════════════════════════
-echo   [C] Auto Shutdown Timer
-echo  ══════════════════════════════════════════════════════════
+echo  +----------------------------------------------------------+
+echo  :  [C] Auto Shutdown Timer                                 :
+echo  +----------------------------------------------------------+
 echo.
 echo   [1] Shutdown in 30 minutes
 echo   [2] Shutdown in 1 hour
@@ -700,9 +714,9 @@ goto :main_menu
 :ldplayer_tools
 cls
 echo.
-echo  ══════════════════════════════════════════════════════════
-echo   [D] LDPlayer Tools
-echo  ══════════════════════════════════════════════════════════
+echo  +----------------------------------------------------------+
+echo  :  [D] LDPlayer Tools                                      :
+echo  +----------------------------------------------------------+
 echo.
 
 :: Count running instances

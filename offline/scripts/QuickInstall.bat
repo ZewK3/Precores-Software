@@ -60,14 +60,9 @@ set "VIRTIO_URL=https://fedorapeople.org/groups/virt/virtio-win/direct-downloads
 :: --- .NET 10 Desktop Runtime ---
 set "DOTNET10_URL=https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/10.0.8/windowsdesktop-runtime-10.0.8-win-x64.exe"
 
-:: --- MSI Afterburner (Google Drive) ---
-set "AFTERBURNER_GDRIVE_ID=102z0_nwLz39R_DZvc9mfDuhyjMIwVjJZ"
-
-:: --- FanControl ---
-set "FANCONTROL_URL=https://github.com/Rem0o/FanControl.Releases/releases/download/V267/FanControl_267_net_10_0_Installer.exe"
-
-:: --- VMware Workstation (Google Drive) ---
-set "VMWARE_GDRIVE_ID=16QYwtoJSAEGAssGP2PwNpdG-lz4LLU3c"
+:: --- Google Drive Software Folder (all extra software lives here) ---
+:: Update files on Drive WITHOUT rebuilding ISO!
+set "GDRIVE_FOLDER_ID=1-AOvLBDWO0ALzGpeJzVxuDkwLgqZWbAy"
 
 :: ============================================================
 :: DO NOT EDIT BELOW
@@ -91,7 +86,7 @@ echo ---- Starting installations ----
 echo.
 
 :: --- 1. Chrome ---
-call :install_app "1/10" "Google Chrome" "%CHROME_URL%" "chrome.msi" "msi" "%ProgramFiles%\Google\Chrome\Application\chrome.exe" "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"
+call :install_app "1/8" "Google Chrome" "%CHROME_URL%" "chrome.msi" "msi" "%ProgramFiles%\Google\Chrome\Application\chrome.exe" "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"
 
 :: --- Chrome Optimization (skip first-run + RAM optimization + custom background) ---
 echo [*] Applying Chrome optimizations...
@@ -235,35 +230,35 @@ if exist "%NEN_SRC%" (
 echo [*] Chrome optimizations done >> "%LOG%"
 
 :: --- 2. 7-Zip ---
-call :install_app "2/10" "7-Zip" "%SEVENZIP_URL%" "7zip.exe" "nsis" "%ProgramFiles%\7-Zip\7z.exe" "%ProgramFiles(x86)%\7-Zip\7z.exe"
+call :install_app "2/8" "7-Zip" "%SEVENZIP_URL%" "7zip.exe" "nsis" "%ProgramFiles%\7-Zip\7z.exe" "%ProgramFiles(x86)%\7-Zip\7z.exe"
 
 :: --- 3. VC++ Redistributable ---
 if /i "%VCREDIST_URL%"=="SKIP" (
-    echo [3/10] VC++ Redist: SKIPPED
-    echo [3/10] VC++ Redist: SKIPPED >> "%LOG%"
+    echo [3/8] VC++ Redist: SKIPPED
+    echo [3/8] VC++ Redist: SKIPPED >> "%LOG%"
     set /a TOTAL_SKIP+=1
 ) else (
     set "VCR_KEY=HKLM\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
     reg query "!VCR_KEY!" /v Installed >nul 2>&1
     if !errorlevel! equ 0 (
-        echo [3/10] VC++ Redist: already installed, skipping.
-        echo [3/10] VC++ Redist: ALREADY INSTALLED >> "%LOG%"
+        echo [3/8] VC++ Redist: already installed, skipping.
+        echo [3/8] VC++ Redist: ALREADY INSTALLED >> "%LOG%"
         set /a TOTAL_SKIP+=1
     ) else (
-        echo [3/10] Installing VC++ Redistributable...
-        echo [3/10] Downloading VC++ Redist... >> "%LOG%"
+        echo [3/8] Installing VC++ Redistributable...
+        echo [3/8] Downloading VC++ Redist... >> "%LOG%"
         %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%VCREDIST_URL%' -OutFile '%DL_DIR%\vcredist.exe' -UseBasicParsing"
         if exist "%DL_DIR%\vcredist.exe" (
-            echo [3/10] Installing VC++ Redist... >> "%LOG%"
+            echo [3/8] Installing VC++ Redist... >> "%LOG%"
             start /wait "" "%DL_DIR%\vcredist.exe" /install /quiet /norestart
             set "EXIT_CODE=!errorlevel!"
-            echo [3/10] VC++ Redist exit code: !EXIT_CODE! >> "%LOG%"
+            echo [3/8] VC++ Redist exit code: !EXIT_CODE! >> "%LOG%"
             del /f /q "%DL_DIR%\vcredist.exe" >nul 2>&1
             if !EXIT_CODE! equ 0 (set /a TOTAL_OK+=1) else (set /a TOTAL_FAIL+=1)
             echo        Done.
         ) else (
             echo        ERROR: download failed.
-            echo [3/10] VC++ Redist: DOWNLOAD FAILED >> "%LOG%"
+            echo [3/8] VC++ Redist: DOWNLOAD FAILED >> "%LOG%"
             set /a TOTAL_FAIL+=1
         )
     )
@@ -272,60 +267,60 @@ if /i "%VCREDIST_URL%"=="SKIP" (
 :: --- 4. VirtIO Guest Tools (auto-detect QEMU/Proxmox) ---
 set "IS_QEMU=0"
 for /f "tokens=*" %%M in ('wmic computersystem get manufacturer /value 2^>nul ^| findstr /i "QEMU"') do set "IS_QEMU=1"
-echo [4/10] Detection: QEMU=%IS_QEMU% >> "%LOG%"
+echo [4/8] Detection: QEMU=%IS_QEMU% >> "%LOG%"
 
 if "%IS_QEMU%"=="1" (
     if exist "%ProgramFiles%\Virtio-Win\" (
-        echo [4/10] VirtIO Guest Tools: already installed, skipping.
-        echo [4/10] VirtIO: ALREADY INSTALLED >> "%LOG%"
+        echo [4/8] VirtIO Guest Tools: already installed, skipping.
+        echo [4/8] VirtIO: ALREADY INSTALLED >> "%LOG%"
         set /a TOTAL_SKIP+=1
     ) else (
-        echo [4/10] Installing VirtIO Guest Tools ^(Proxmox/QEMU detected^)...
-        echo [4/10] Downloading VirtIO... >> "%LOG%"
+        echo [4/8] Installing VirtIO Guest Tools ^(Proxmox/QEMU detected^)...
+        echo [4/8] Downloading VirtIO... >> "%LOG%"
         %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%VIRTIO_URL%' -OutFile '%DL_DIR%\virtio-win-guest-tools.exe' -UseBasicParsing"
         if exist "%DL_DIR%\virtio-win-guest-tools.exe" (
             start /wait "" "%DL_DIR%\virtio-win-guest-tools.exe" /install /quiet /norestart
             set "EXIT_CODE=!errorlevel!"
-            echo [4/10] VirtIO exit code: !EXIT_CODE! >> "%LOG%"
+            echo [4/8] VirtIO exit code: !EXIT_CODE! >> "%LOG%"
             del /f /q "%DL_DIR%\virtio-win-guest-tools.exe" >nul 2>&1
             if !EXIT_CODE! equ 0 (set /a TOTAL_OK+=1) else if !EXIT_CODE! equ 3010 (set /a TOTAL_OK+=1) else (set /a TOTAL_FAIL+=1)
             echo        Done.
         ) else (
             echo        ERROR: download failed.
-            echo [4/10] VirtIO: DOWNLOAD FAILED >> "%LOG%"
+            echo [4/8] VirtIO: DOWNLOAD FAILED >> "%LOG%"
             set /a TOTAL_FAIL+=1
         )
     )
 ) else (
-    echo [4/10] VirtIO: SKIPPED ^(not QEMU/Proxmox^)
-    echo [4/10] VirtIO: SKIPPED (not QEMU) >> "%LOG%"
+    echo [4/8] VirtIO: SKIPPED ^(not QEMU/Proxmox^)
+    echo [4/8] VirtIO: SKIPPED (not QEMU) >> "%LOG%"
     set /a TOTAL_SKIP+=1
 )
 
 :: --- 5. LDPlayer 9 (download to Software folder) ---
-echo [5/10] Downloading LDPlayer 9 to Software folder...
-echo [5/10] Downloading LDPlayer 9... >> "%LOG%"
+echo [5/8] Downloading LDPlayer 9 to Software folder...
+echo [5/8] Downloading LDPlayer 9... >> "%LOG%"
 if exist "%SOFTWARE_DIR%\LDPlayer9_Installer.exe" (
-    echo [5/10] LDPlayer: already downloaded, skipping.
-    echo [5/10] LDPlayer: ALREADY EXISTS >> "%LOG%"
+    echo [5/8] LDPlayer: already downloaded, skipping.
+    echo [5/8] LDPlayer: ALREADY EXISTS >> "%LOG%"
     set /a TOTAL_SKIP+=1
 ) else (
     %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%LDPLAYER_URL%' -OutFile '%SOFTWARE_DIR%\LDPlayer9_Installer.exe' -UseBasicParsing"
     if exist "%SOFTWARE_DIR%\LDPlayer9_Installer.exe" (
         echo        Done. Saved to Software\LDPlayer9_Installer.exe
-        echo [5/10] LDPlayer: DOWNLOADED >> "%LOG%"
+        echo [5/8] LDPlayer: DOWNLOADED >> "%LOG%"
         set /a TOTAL_OK+=1
     ) else (
         echo        ERROR: download failed.
-        echo [5/10] LDPlayer: DOWNLOAD FAILED >> "%LOG%"
+        echo [5/8] LDPlayer: DOWNLOAD FAILED >> "%LOG%"
         set /a TOTAL_FAIL+=1
     )
 )
 
 :: --- 6. UniKey ---
 if /i "%UNIKEY_URL%"=="SKIP" (
-    echo [6/10] UniKey: SKIPPED
-    echo [6/10] UniKey: SKIPPED >> "%LOG%"
+    echo [6/8] UniKey: SKIPPED
+    echo [6/8] UniKey: SKIPPED >> "%LOG%"
     set /a TOTAL_SKIP+=1
 ) else (
     set "UNIKEY_ROOT=%ProgramFiles%\UniKey"
@@ -334,12 +329,12 @@ if /i "%UNIKEY_URL%"=="SKIP" (
         for /r "!UNIKEY_ROOT!" %%F in (UniKeyNT.exe) do if not defined EXISTING_EXE set "EXISTING_EXE=%%F"
     )
     if defined EXISTING_EXE (
-        echo [6/10] UniKey: already installed, skipping.
-        echo [6/10] UniKey: ALREADY INSTALLED >> "%LOG%"
+        echo [6/8] UniKey: already installed, skipping.
+        echo [6/8] UniKey: ALREADY INSTALLED >> "%LOG%"
         set /a TOTAL_SKIP+=1
     ) else (
-        echo [6/10] Installing UniKey...
-        echo [6/10] Downloading UniKey... >> "%LOG%"
+        echo [6/8] Installing UniKey...
+        echo [6/8] Downloading UniKey... >> "%LOG%"
         if not exist "!UNIKEY_ROOT!" mkdir "!UNIKEY_ROOT!" >nul 2>&1
         %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%UNIKEY_URL%' -OutFile '%DL_DIR%\unikey.zip' -UseBasicParsing -UserAgent 'Mozilla/5.0'"
         if exist "%DL_DIR%\unikey.zip" (
@@ -356,128 +351,102 @@ if /i "%UNIKEY_URL%"=="SKIP" (
                 powershell -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('CommonStartup')+'\UniKey.lnk');$s.TargetPath='!UNIKEY_ROOT!\UniKeyNT.exe';$s.WorkingDirectory='!UNIKEY_ROOT!';$s.Save()" >nul 2>&1
                 start "" "!UNIKEY_ROOT!\UniKeyNT.exe"
                 echo        Done. UniKey installed.
-                echo [6/10] UniKey: OK >> "%LOG%"
+                echo [6/8] UniKey: OK >> "%LOG%"
                 set /a TOTAL_OK+=1
             ) else (
                 echo        WARNING: UniKeyNT.exe not found after extract.
-                echo [6/10] UniKey: EXTRACT FAILED >> "%LOG%"
+                echo [6/8] UniKey: EXTRACT FAILED >> "%LOG%"
                 set /a TOTAL_FAIL+=1
             )
         ) else (
             echo        ERROR: Download failed.
-            echo [6/10] UniKey: DOWNLOAD FAILED >> "%LOG%"
+            echo [6/8] UniKey: DOWNLOAD FAILED >> "%LOG%"
             set /a TOTAL_FAIL+=1
         )
     )
 )
 
 :: --- 7. .NET 10 Desktop Runtime ---
-echo [7/10] Checking .NET 10 Desktop Runtime...
+echo [7/8] Checking .NET 10 Desktop Runtime...
 set "DOTNET10_FOUND=0"
 powershell -NoProfile -Command "if(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue | Get-ItemProperty | Where-Object {$_.DisplayName -match 'Microsoft Windows Desktop Runtime.*10\.0'}){exit 0}else{exit 1}" >nul 2>&1
 if !errorlevel! equ 0 (
-    echo [7/10] .NET 10 Desktop Runtime: already installed, skipping.
-    echo [7/10] .NET 10: ALREADY INSTALLED >> "%LOG%"
+    echo [7/8] .NET 10 Desktop Runtime: already installed, skipping.
+    echo [7/8] .NET 10: ALREADY INSTALLED >> "%LOG%"
     set /a TOTAL_SKIP+=1
 ) else (
-    echo [7/10] Installing .NET 10 Desktop Runtime...
-    echo [7/10] Downloading .NET 10... >> "%LOG%"
+    echo [7/8] Installing .NET 10 Desktop Runtime...
+    echo [7/8] Downloading .NET 10... >> "%LOG%"
     %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%DOTNET10_URL%' -OutFile '%DL_DIR%\dotnet10-desktop.exe' -UseBasicParsing"
     if exist "%DL_DIR%\dotnet10-desktop.exe" (
-        echo [7/10] Installing .NET 10... >> "%LOG%"
+        echo [7/8] Installing .NET 10... >> "%LOG%"
         start /wait "" "%DL_DIR%\dotnet10-desktop.exe" /install /quiet /norestart
         set "EXIT_CODE=!errorlevel!"
-        echo [7/10] .NET 10 exit code: !EXIT_CODE! >> "%LOG%"
+        echo [7/8] .NET 10 exit code: !EXIT_CODE! >> "%LOG%"
         del /f /q "%DL_DIR%\dotnet10-desktop.exe" >nul 2>&1
         if !EXIT_CODE! equ 0 (set /a TOTAL_OK+=1) else if !EXIT_CODE! equ 3010 (set /a TOTAL_OK+=1) else (set /a TOTAL_FAIL+=1)
         echo        Done.
     ) else (
         echo        ERROR: download failed.
-        echo [7/10] .NET 10: DOWNLOAD FAILED >> "%LOG%"
+        echo [7/8] .NET 10: DOWNLOAD FAILED >> "%LOG%"
         set /a TOTAL_FAIL+=1
     )
 )
 
-:: --- 8. MSI Afterburner (download ZIP from Google Drive + extract to Software folder) ---
-echo [8/10] Downloading MSI Afterburner to Software folder...
-echo [8/10] Downloading MSI Afterburner... >> "%LOG%"
-if exist "%SOFTWARE_DIR%\MSI Afterburner" (
-    echo [8/10] MSI Afterburner: already extracted, skipping.
-    echo [8/10] MSI Afterburner: ALREADY EXISTS >> "%LOG%"
-    set /a TOTAL_SKIP+=1
-) else (
-    set "GDRIVE_PS=%DL_DIR%\gdrive_ab.ps1"
-    powershell -NoProfile -Command "Set-Content -Path '%DL_DIR%\gdrive_ab.ps1' -Value @('[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12','`$ProgressPreference=''SilentlyContinue''','`$u=''https://drive.google.com/uc?export=download''+[char]38+''confirm=t''+[char]38+''id=%AFTERBURNER_GDRIVE_ID%''','Invoke-WebRequest -Uri `$u -OutFile ''%DL_DIR%\MSIAfterburnerSetup.zip'' -UseBasicParsing')"
-    powershell -NoProfile -ExecutionPolicy Bypass -File "!GDRIVE_PS!"
-    del /f /q "!GDRIVE_PS!" >nul 2>&1
-    if exist "%DL_DIR%\MSIAfterburnerSetup.zip" (
-        echo [8/10] Extracting to Software folder... >> "%LOG%"
-        powershell -NoProfile -Command "Expand-Archive -LiteralPath '%DL_DIR%\MSIAfterburnerSetup.zip' -DestinationPath '%SOFTWARE_DIR%\MSI Afterburner' -Force" >nul 2>&1
-        del /f /q "%DL_DIR%\MSIAfterburnerSetup.zip" >nul 2>&1
-        echo        Done. Extracted to Software\MSI Afterburner
-        echo [8/10] MSI Afterburner: EXTRACTED >> "%LOG%"
+:: --- 8. Download Software from Google Drive folder ---
+:: All extra software (VMware, MSI Afterburner, FanControl, etc.) lives in one Drive folder.
+:: Add/remove/update files on Drive WITHOUT rebuilding ISO!
+echo [8/8] Downloading Software from Google Drive folder...
+echo [8/8] Downloading Software folder from Google Drive... >> "%LOG%"
+set "GDRIVE_SCRIPT=C:\InstallScripts\gdrive_folder_dl.ps1"
+if exist "%GDRIVE_SCRIPT%" (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%GDRIVE_SCRIPT%" "%GDRIVE_FOLDER_ID%" "%SOFTWARE_DIR%"
+    if !errorlevel! equ 0 (
+        echo [8/8] Software folder: ALL OK >> "%LOG%"
         set /a TOTAL_OK+=1
     ) else (
-        echo        ERROR: download failed.
-        echo [8/10] MSI Afterburner: DOWNLOAD FAILED >> "%LOG%"
+        echo [8/8] Software folder: SOME DOWNLOADS FAILED >> "%LOG%"
         set /a TOTAL_FAIL+=1
     )
-)
-
-:: --- 9. FanControl (download to Software folder) ---
-echo [9/10] Downloading FanControl to Software folder...
-echo [9/10] Downloading FanControl... >> "%LOG%"
-if exist "%SOFTWARE_DIR%\FanControl_Installer.exe" (
-    echo [9/10] FanControl: already downloaded, skipping.
-    echo [9/10] FanControl: ALREADY EXISTS >> "%LOG%"
-    set /a TOTAL_SKIP+=1
 ) else (
-    %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%FANCONTROL_URL%' -OutFile '%SOFTWARE_DIR%\FanControl_Installer.exe' -UseBasicParsing"
-    if exist "%SOFTWARE_DIR%\FanControl_Installer.exe" (
-        echo        Done. Saved to Software\FanControl_Installer.exe
-        echo [9/10] FanControl: DOWNLOADED >> "%LOG%"
-        set /a TOTAL_OK+=1
-    ) else (
-        echo        ERROR: download failed.
-        echo [9/10] FanControl: DOWNLOAD FAILED >> "%LOG%"
-        set /a TOTAL_FAIL+=1
-    )
-)
-
-:: --- 10. VMware Workstation (download from Google Drive to Software folder) ---
-echo [10/10] Downloading VMware Workstation to Software folder...
-echo [10/10] Downloading VMware... >> "%LOG%"
-if exist "%SOFTWARE_DIR%\VMware-Workstation-Installer.exe" (
-    echo [10/10] VMware: already downloaded, skipping.
-    echo [10/10] VMware: ALREADY EXISTS >> "%LOG%"
-    set /a TOTAL_SKIP+=1
-) else (
-    set "GDRIVE_PS=%DL_DIR%\gdrive_vm.ps1"
-    powershell -NoProfile -Command "Set-Content -Path '%DL_DIR%\gdrive_vm.ps1' -Value @('[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12','`$ProgressPreference=''SilentlyContinue''','`$u=''https://drive.google.com/uc?export=download''+[char]38+''confirm=t''+[char]38+''id=%VMWARE_GDRIVE_ID%''','Invoke-WebRequest -Uri `$u -OutFile ''%SOFTWARE_DIR%\VMware-Workstation-Installer.exe'' -UseBasicParsing')"
-    powershell -NoProfile -ExecutionPolicy Bypass -File "!GDRIVE_PS!"
-    del /f /q "!GDRIVE_PS!" >nul 2>&1
-    if exist "%SOFTWARE_DIR%\VMware-Workstation-Installer.exe" (
-        echo        Done. Saved to Software\VMware-Workstation-Installer.exe
-        echo [10/10] VMware: DOWNLOADED >> "%LOG%"
-        set /a TOTAL_OK+=1
-    ) else (
-        echo        ERROR: download failed.
-        echo [10/10] VMware: DOWNLOAD FAILED >> "%LOG%"
-        set /a TOTAL_FAIL+=1
-    )
+    echo        ERROR: gdrive_folder_dl.ps1 not found.
+    echo [8/8] Software folder: SCRIPT MISSING >> "%LOG%"
+    set /a TOTAL_FAIL+=1
 )
 
 :: --- Cleanup download dir ---
 timeout /t 3 /nobreak >nul
 rmdir /s /q "%DL_DIR%" >nul 2>&1
 
-:: --- Deploy PreCore PC maintenance tool to Desktop ---
+:: --- Deploy PreCores PC maintenance tool to Desktop ---
 set "PRECORE_SRC=C:\InstallScripts\precore-pc.bat"
-set "PRECORE_DST=%PUBLIC%\Desktop\precore-pc.bat"
+set "PCL_TOOL_DIR=%ProgramData%\PCL"
+set "PRECORE_DST=%PCL_TOOL_DIR%\precore-pc.bat"
+set "AVT_SRC=C:\InstallScripts\avt.png"
+set "ICO_DST=%PCL_TOOL_DIR%\precores-pc.ico"
 if exist "%PRECORE_SRC%" (
+    if not exist "%PCL_TOOL_DIR%" mkdir "%PCL_TOOL_DIR%" >nul 2>&1
     copy /y "%PRECORE_SRC%" "%PRECORE_DST%" >nul 2>&1
-    echo [*] PreCore PC tool deployed to Desktop.
-    echo [*] PreCore PC: DEPLOYED >> "%LOG%"
+    :: Convert avt.png to .ico for shortcut icon
+    if exist "%AVT_SRC%" (
+        powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+            "Add-Type -AssemblyName System.Drawing;$img=[System.Drawing.Image]::FromFile('%AVT_SRC%');$bmp=New-Object System.Drawing.Bitmap($img,64,64);$ms=New-Object System.IO.MemoryStream;$bmp.Save($ms,[System.Drawing.Imaging.ImageFormat]::Png);$bmpBytes=$ms.ToArray();$ms.Dispose();$bmp.Dispose();$img.Dispose();$fs=[System.IO.File]::Create('%ICO_DST%');$w=New-Object System.IO.BinaryWriter($fs);$w.Write([byte[]]@(0,0,1,0,1,0,64,64,0,0,1,0,32,0));$w.Write([int32]($bmpBytes.Length));$w.Write([int32]22);$w.Write($bmpBytes);$w.Flush();$fs.Close()" >nul 2>&1
+    )
+    :: Create desktop shortcut "PreCores PC" with icon
+    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+        "$desktop=[Environment]::GetFolderPath('CommonDesktopDirectory');" ^
+        "$s=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $desktop 'PreCores PC.lnk'));" ^
+        "$s.TargetPath='cmd.exe';" ^
+        "$s.Arguments='/c \"\"%PRECORE_DST%\"\"';" ^
+        "$s.WorkingDirectory='%PCL_TOOL_DIR%';" ^
+        "if(Test-Path '%ICO_DST%'){$s.IconLocation='%ICO_DST%,0'}else{$s.IconLocation='%SystemRoot%\System32\shell32.dll,21'};" ^
+        "$s.Description='PreCores PC - System Maintenance';" ^
+        "$s.WindowStyle=1;" ^
+        "$s.Save()" >nul 2>&1
+    :: Remove raw .bat from desktop if left from older versions
+    if exist "%PUBLIC%\Desktop\precore-pc.bat" del /f /q "%PUBLIC%\Desktop\precore-pc.bat" >nul 2>&1
+    echo [*] PreCores PC tool deployed with custom icon.
+    echo [*] PreCores PC: DEPLOYED >> "%LOG%"
 )
 
 :: --- Summary ---
