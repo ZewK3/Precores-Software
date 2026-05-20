@@ -221,15 +221,18 @@ for /f "usebackq" %%M in (`powershell -NoProfile -Command "[Math]::Round((Get-Ci
 echo   Free RAM before: !FREE_BEFORE! GB
 
 echo   [*] Trimming working sets of background processes...
+if exist "%ProgramData%\PCL\trim_ram.exe" (
+    "%ProgramData%\PCL\trim_ram.exe" >nul 2>&1
+    goto :trim_done_1
+)
 set "TRIM_PS=%TEMP%\pcl_trim.ps1"
-(
-echo $ErrorActionPreference='SilentlyContinue'
-echo Add-Type 'using System;using System.Runtime.InteropServices;public class WS{[DllImport("kernel32.dll")]public static extern bool SetProcessWorkingSetSize(IntPtr h,IntPtr min,IntPtr max);}' -EA SilentlyContinue
-echo $skip='LDPlayer|dnplayer|svchost|System|Idle|csrss|smss|lsass|explorer|wininit|winlogon|services|dwm|fontdrvhost|Memory Compression|Registry'
-echo Get-Process ^| Where-Object {$_.ProcessName -notmatch $skip} ^| ForEach-Object { try{$h=$_.Handle;if($h){[void][WS]::SetProcessWorkingSetSize($h,[IntPtr]::new(-1^),[IntPtr]::new(-1^))}}catch{} }
-) > "%TRIM_PS%"
-powershell -NoProfile -ExecutionPolicy Bypass -File "%TRIM_PS%" >nul 2>&1
-del /f /q "%TRIM_PS%" >nul 2>&1
+echo $ErrorActionPreference='SilentlyContinue' > "!TRIM_PS!"
+echo Add-Type 'using System;using System.Runtime.InteropServices;public class WS{[DllImport("kernel32.dll")]public static extern bool SetProcessWorkingSetSize(IntPtr h,IntPtr min,IntPtr max);}' -EA SilentlyContinue >> "!TRIM_PS!"
+echo $skip='LDPlayer^|dnplayer^|LdVBoxHeadless^|svchost^|System^|Idle^|csrss^|smss^|lsass^|explorer^|wininit^|winlogon^|services^|dwm^|fontdrvhost^|Memory Compression^|Registry' >> "!TRIM_PS!"
+echo Get-Process ^| Where-Object {$_.ProcessName -notmatch $skip} ^| ForEach-Object { try{$h=$_.Handle;if($h){[void][WS]::SetProcessWorkingSetSize($h,[IntPtr]::new(-1),[IntPtr]::new(-1))}}catch{} } >> "!TRIM_PS!"
+powershell -NoProfile -ExecutionPolicy Bypass -File "!TRIM_PS!" >nul 2>&1
+del /f /q "!TRIM_PS!" >nul 2>&1
+:trim_done_1
 echo       Done.
 
 echo   [*] Flushing idle tasks...
@@ -539,15 +542,18 @@ if exist "%LOCALAPPDATA%\Microsoft\Edge\User Data\Default\Cache" rmdir /s /q "%L
 echo   Done.
 
 echo  -- Step 3/4: Reclaiming RAM --
+if exist "%ProgramData%\PCL\trim_ram.exe" (
+    "%ProgramData%\PCL\trim_ram.exe" >nul 2>&1
+    goto :trim_done_2
+)
 set "TRIM_PS=%TEMP%\pcl_trim.ps1"
-(
-echo $ErrorActionPreference='SilentlyContinue'
-echo Add-Type 'using System;using System.Runtime.InteropServices;public class WS{[DllImport("kernel32.dll")]public static extern bool SetProcessWorkingSetSize(IntPtr h,IntPtr min,IntPtr max);}' -EA SilentlyContinue
-echo $skip='LDPlayer|dnplayer|svchost|System|Idle|csrss|smss|lsass|explorer|wininit|winlogon|services|dwm|fontdrvhost|Memory Compression|Registry'
-echo Get-Process ^| Where-Object {$_.ProcessName -notmatch $skip} ^| ForEach-Object { try{$h=$_.Handle;if($h){[void][WS]::SetProcessWorkingSetSize($h,[IntPtr]::new(-1^),[IntPtr]::new(-1^))}}catch{} }
-) > "%TRIM_PS%"
-powershell -NoProfile -ExecutionPolicy Bypass -File "%TRIM_PS%" >nul 2>&1
-del /f /q "%TRIM_PS%" >nul 2>&1
+echo $ErrorActionPreference='SilentlyContinue' > "!TRIM_PS!"
+echo Add-Type 'using System;using System.Runtime.InteropServices;public class WS{[DllImport("kernel32.dll")]public static extern bool SetProcessWorkingSetSize(IntPtr h,IntPtr min,IntPtr max);}' -EA SilentlyContinue >> "!TRIM_PS!"
+echo $skip='LDPlayer^|dnplayer^|LdVBoxHeadless^|svchost^|System^|Idle^|csrss^|smss^|lsass^|explorer^|wininit^|winlogon^|services^|dwm^|fontdrvhost^|Memory Compression^|Registry' >> "!TRIM_PS!"
+echo Get-Process ^| Where-Object {$_.ProcessName -notmatch $skip} ^| ForEach-Object { try{$h=$_.Handle;if($h){[void][WS]::SetProcessWorkingSetSize($h,[IntPtr]::new(-1),[IntPtr]::new(-1))}}catch{} } >> "!TRIM_PS!"
+powershell -NoProfile -ExecutionPolicy Bypass -File "!TRIM_PS!" >nul 2>&1
+del /f /q "!TRIM_PS!" >nul 2>&1
+:trim_done_2
 rundll32.exe advapi32.dll,ProcessIdleTasks >nul 2>&1
 echo   Done.
 

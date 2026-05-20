@@ -541,6 +541,11 @@ reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v Cons
 reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v HideFastUserSwitching /t REG_DWORD /d 1 /f >nul
 reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v PromptOnSecureDesktop /t REG_DWORD /d 0 /f >nul
 
+:: ---- USER & GDI Object Limits (Prevents simulator crash under extreme 30-50+ multi-instance farming) ----
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows" /v USERProcessHandleLimit /t REG_DWORD /d 18000 /f >nul
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows" /v GDIProcessHandleLimit /t REG_DWORD /d 18000 /f >nul
+
+
 :: Disable all background UWP apps globally
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications" /v GlobalUserDisabled /t REG_DWORD /d 1 /f >nul
 :: LetAppsRunInBackground already set to 2 in line 337 above
@@ -1556,29 +1561,138 @@ taskkill /f /im ShellExperienceHost.exe >nul 2>&1
 taskkill /f /im StartMenuExperienceHost.exe >nul 2>&1
 echo   - Background UWP processes killed
 
+:: Compile Native C# RAM Trimmer (trim_ram.exe)
+echo   - Compiling Native C# RAM Trimmer...
+if not exist "%ProgramData%\PCL" mkdir "%ProgramData%\PCL" >nul 2>&1
+set "CS_FILE=%TEMP%\trim_ram.cs"
+echo using System; > "%CS_FILE%"
+echo using System.Diagnostics; >> "%CS_FILE%"
+echo using System.Runtime.InteropServices; >> "%CS_FILE%"
+echo using System.Text.RegularExpressions; >> "%CS_FILE%"
+echo public class RamTrimmer { >> "%CS_FILE%"
+echo     [DllImport("kernel32.dll", SetLastError = true)] >> "%CS_FILE%"
+echo     public static extern bool GetNumaHighestNodeNumber(out uint highestNodeNumber); >> "%CS_FILE%"
+echo     [DllImport("kernel32.dll", SetLastError = true)] >> "%CS_FILE%"
+echo     public static extern bool GetNumaNodeProcessorMask(byte node, out ulong processorMask); >> "%CS_FILE%"
+echo     [DllImport("kernel32.dll", EntryPoint = "SetProcessWorkingSetSize", SetLastError = true)] >> "%CS_FILE%"
+echo     public static extern bool SetProcessWorkingSetSize(IntPtr hProcess, IntPtr dwMinimumWorkingSetSize, IntPtr dwMaximumWorkingSetSize); >> "%CS_FILE%"
+echo     [DllImport("ntdll.dll", SetLastError = true)] >> "%CS_FILE%"
+echo     public static extern int NtSetSystemInformation(int systemInformationClass, IntPtr systemInformation, int systemInformationLength); >> "%CS_FILE%"
+echo     [DllImport("advapi32.dll", SetLastError = true)] >> "%CS_FILE%"
+echo     public static extern bool OpenProcessToken(IntPtr processHandle, uint desiredAccess, out IntPtr tokenHandle); >> "%CS_FILE%"
+echo     [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Auto)] >> "%CS_FILE%"
+echo     public static extern bool LookupPrivilegeValue(string lpSystemName, string lpName, out LUID lpLuid); >> "%CS_FILE%"
+echo     [DllImport("advapi32.dll", SetLastError = true)] >> "%CS_FILE%"
+echo     public static extern bool AdjustTokenPrivileges(IntPtr tokenHandle, bool disableAllPrivileges, ref TOKEN_PRIVILEGES newState, int bufferLength, IntPtr previousState, IntPtr returnLength); >> "%CS_FILE%"
+echo     [StructLayout(LayoutKind.Sequential)] >> "%CS_FILE%"
+echo     public struct LUID { >> "%CS_FILE%"
+echo         public uint LowPart; >> "%CS_FILE%"
+echo         public int HighPart; >> "%CS_FILE%"
+echo     } >> "%CS_FILE%"
+echo     [StructLayout(LayoutKind.Sequential)] >> "%CS_FILE%"
+echo     public struct TOKEN_PRIVILEGES { >> "%CS_FILE%"
+echo         public uint PrivilegeCount; >> "%CS_FILE%"
+echo         public LUID Luid; >> "%CS_FILE%"
+echo         public uint Attributes; >> "%CS_FILE%"
+echo     } >> "%CS_FILE%"
+echo     private static void EnablePrivilege(string privilegeName) { >> "%CS_FILE%"
+echo         try { >> "%CS_FILE%"
+echo             IntPtr hToken; >> "%CS_FILE%"
+echo             if (OpenProcessToken(Process.GetCurrentProcess().Handle, 0x0020 ^| 0x0008, out hToken)) { >> "%CS_FILE%"
+echo                 LUID luid; >> "%CS_FILE%"
+echo                 if (LookupPrivilegeValue(null, privilegeName, out luid)) { >> "%CS_FILE%"
+echo                     TOKEN_PRIVILEGES tp = new TOKEN_PRIVILEGES(); >> "%CS_FILE%"
+echo                     tp.PrivilegeCount = 1; >> "%CS_FILE%"
+echo                     tp.Luid = luid; >> "%CS_FILE%"
+echo                     tp.Attributes = 0x00000002; >> "%CS_FILE%"
+echo                     AdjustTokenPrivileges(hToken, false, ref tp, Marshal.SizeOf(tp), IntPtr.Zero, IntPtr.Zero); >> "%CS_FILE%"
+echo                 } >> "%CS_FILE%"
+echo             } >> "%CS_FILE%"
+echo         } catch {} >> "%CS_FILE%"
+echo     } >> "%CS_FILE%"
+echo     public static void Main() { >> "%CS_FILE%"
+echo         EnablePrivilege("SeIncreaseQuotaPrivilege"); >> "%CS_FILE%"
+echo         EnablePrivilege("SeProfileSingleProcessPrivilege"); >> "%CS_FILE%"
+echo         try { >> "%CS_FILE%"
+echo             int purgeCommand = 4; >> "%CS_FILE%"
+echo             IntPtr pCommand = Marshal.AllocHGlobal(sizeof(int)); >> "%CS_FILE%"
+echo             Marshal.WriteInt32(pCommand, purgeCommand); >> "%CS_FILE%"
+echo             NtSetSystemInformation(80, pCommand, sizeof(int)); >> "%CS_FILE%"
+echo             Marshal.FreeHGlobal(pCommand); >> "%CS_FILE%"
+echo         } catch {} >> "%CS_FILE%"
+echo         uint highestNode = 0; >> "%CS_FILE%"
+echo         ulong[] numaMasks = null; >> "%CS_FILE%"
+echo         if (GetNumaHighestNodeNumber(out highestNode) ^&^& highestNode ^> 0) { >> "%CS_FILE%"
+echo             numaMasks = new ulong[highestNode + 1]; >> "%CS_FILE%"
+echo             for (byte i = 0; i ^<= highestNode; i++) { >> "%CS_FILE%"
+echo                 ulong mask; >> "%CS_FILE%"
+echo                 if (GetNumaNodeProcessorMask(i, out mask)) { >> "%CS_FILE%"
+echo                     numaMasks[i] = mask; >> "%CS_FILE%"
+echo                 } >> "%CS_FILE%"
+echo             } >> "%CS_FILE%"
+echo         } >> "%CS_FILE%"
+echo         string skipPattern = @"^(svchost|System|Idle|csrss|smss|lsass|explorer|wininit|winlogon|services|dwm|fontdrvhost|Memory Compression|Registry|MsMpEng|NisSrv|SecurityHealth|spoolsv|WmiPrvSE)$"; >> "%CS_FILE%"
+echo         Regex regex = new Regex(skipPattern, RegexOptions.IgnoreCase); >> "%CS_FILE%"
+echo         Process[] processes = Process.GetProcesses(); >> "%CS_FILE%"
+echo         int ldplayerCount = 0; >> "%CS_FILE%"
+echo         foreach (Process proc in processes) { >> "%CS_FILE%"
+echo             try { >> "%CS_FILE%"
+echo                 string name = proc.ProcessName; >> "%CS_FILE%"
+echo                 bool isLDPlayer = name.Equals("dnplayer", StringComparison.OrdinalIgnoreCase) ^|^| name.Equals("LDPlayer", StringComparison.OrdinalIgnoreCase) ^|^| name.Equals("LdVBoxHeadless", StringComparison.OrdinalIgnoreCase); >> "%CS_FILE%"
+echo                 if (isLDPlayer) { >> "%CS_FILE%"
+echo                     proc.PriorityClass = ProcessPriorityClass.AboveNormal; >> "%CS_FILE%"
+echo                     if (numaMasks != null ^&^& numaMasks.Length ^> 1) { >> "%CS_FILE%"
+echo                         int nodeIndex = ldplayerCount %% numaMasks.Length; >> "%CS_FILE%"
+echo                         ulong mask = numaMasks[nodeIndex]; >> "%CS_FILE%"
+echo                         if (mask != 0) { >> "%CS_FILE%"
+echo                             proc.ProcessorAffinity = new IntPtr((long)mask); >> "%CS_FILE%"
+echo                         } >> "%CS_FILE%"
+echo                         ldplayerCount++; >> "%CS_FILE%"
+echo                     } >> "%CS_FILE%"
+echo                     continue; >> "%CS_FILE%"
+echo                 } >> "%CS_FILE%"
+echo                 if (regex.IsMatch(name)) continue; >> "%CS_FILE%"
+echo                 if (proc.WorkingSet64 ^> 20 * 1024 * 1024) { >> "%CS_FILE%"
+echo                     IntPtr h = proc.Handle; >> "%CS_FILE%"
+echo                     if (h != IntPtr.Zero) SetProcessWorkingSetSize(h, new IntPtr(-1), new IntPtr(-1)); >> "%CS_FILE%"
+echo                 } >> "%CS_FILE%"
+echo             } catch {} >> "%CS_FILE%"
+echo         } >> "%CS_FILE%"
+echo     } >> "%CS_FILE%"
+echo } >> "%CS_FILE%"
+%SystemRoot%\Microsoft.NET\Framework64\v4.0.30319\csc.exe /target:exe /out:"%ProgramData%\PCL\trim_ram.exe" /optimize "%CS_FILE%" >nul 2>&1
+del /f /q "%CS_FILE%" >nul 2>&1
+if exist "%ProgramData%\PCL\trim_ram.exe" (
+    echo   - Native C# RAM Trimmer compiled successfully
+) else (
+    echo   [WARN] Failed to compile Native C# RAM Trimmer, will use PowerShell fallback
+)
+
 :: Schedule auto-kill of memory-wasting processes at logon
 set "KILL_SCRIPT=%PCL_DIR%\kill_bloat.bat"
-(
-echo @echo off
-echo :loop
-echo timeout /t 60 /nobreak ^>nul
-echo for %%%%P in (
-echo     SearchApp.exe SearchUI.exe RuntimeBroker.exe
-echo     ShellExperienceHost.exe StartMenuExperienceHost.exe
-echo     MicrosoftEdge.exe msedge.exe MicrosoftEdgeUpdate.exe
-echo     MusNotification.exe MusNotificationUx.exe
-echo     ctfmon.exe YourPhone.exe PhoneExperienceHost.exe
-echo     GameBarPresenceWriter.exe gamebar.exe GameBar.exe
-echo     TextInputHost.exe InputApp.exe
-echo     CompatTelRunner.exe DeviceCensus.exe
-echo     WmiPrvSE.exe backgroundTaskHost.exe
-echo     SecurityHealthSystray.exe SecurityHealthService.exe
-echo     OneDrive.exe Teams.exe
-echo ^) do taskkill /f /im %%%%P ^>nul 2^>^&1
-echo :: Trim working set of heavy processes to reclaim idle RAM
-echo powershell -NoProfile -Command "$ErrorActionPreference='SilentlyContinue';$c='using System;using System.Runtime.InteropServices;public class WS{[DllImport(''kernel32.dll'')]public static extern bool SetProcessWorkingSetSize(IntPtr h,IntPtr min,IntPtr max);}';Add-Type $c -EA SilentlyContinue;Get-Process ^| Where-Object {$_.WorkingSet64 -gt 50MB -and $_.ProcessName -notmatch 'LDPlayer^|dnplayer^|svchost^|System^|Idle^|csrss^|smss^|lsass^|explorer^|wininit^|winlogon^|services^|dwm^|fontdrvhost^|Memory Compression^|Registry^|MsMpEng^|NisSrv^|SecurityHealth^|spoolsv^|WmiPrvSE'} ^| ForEach-Object { try{$h=$_.Handle;if($h){[void][WS]::SetProcessWorkingSetSize($h,[IntPtr]::new(-1),[IntPtr]::new(-1))}}catch{} }" ^>nul 2^>^&1
-echo goto :loop
-) > "%KILL_SCRIPT%"
+echo @echo off > "%KILL_SCRIPT%"
+echo :loop >> "%KILL_SCRIPT%"
+echo timeout /t 60 /nobreak ^>nul >> "%KILL_SCRIPT%"
+echo for %%%%P in ( >> "%KILL_SCRIPT%"
+echo     SearchApp.exe SearchUI.exe RuntimeBroker.exe >> "%KILL_SCRIPT%"
+echo     ShellExperienceHost.exe StartMenuExperienceHost.exe >> "%KILL_SCRIPT%"
+echo     MicrosoftEdge.exe msedge.exe MicrosoftEdgeUpdate.exe >> "%KILL_SCRIPT%"
+echo     MusNotification.exe MusNotificationUx.exe >> "%KILL_SCRIPT%"
+echo     ctfmon.exe YourPhone.exe PhoneExperienceHost.exe >> "%KILL_SCRIPT%"
+echo     GameBarPresenceWriter.exe gamebar.exe GameBar.exe >> "%KILL_SCRIPT%"
+echo     TextInputHost.exe InputApp.exe >> "%KILL_SCRIPT%"
+echo     CompatTelRunner.exe DeviceCensus.exe >> "%KILL_SCRIPT%"
+echo     WmiPrvSE.exe backgroundTaskHost.exe >> "%KILL_SCRIPT%"
+echo     SecurityHealthSystray.exe SecurityHealthService.exe >> "%KILL_SCRIPT%"
+echo     OneDrive.exe Teams.exe >> "%KILL_SCRIPT%"
+echo ) do taskkill /f /im %%%%P ^>nul 2^>^&1 >> "%KILL_SCRIPT%"
+echo :: Native C# RAM Reclaim with PowerShell fallback >> "%KILL_SCRIPT%"
+echo if exist "%ProgramData%\PCL\trim_ram.exe" ( >> "%KILL_SCRIPT%"
+echo     "%ProgramData%\PCL\trim_ram.exe" ^>nul 2^>^&1 >> "%KILL_SCRIPT%"
+echo ) else ( >> "%KILL_SCRIPT%"
+echo     powershell -NoProfile -Command "$ErrorActionPreference='SilentlyContinue';$c='using System;using System.Runtime.InteropServices;public class WS{[DllImport(''kernel32.dll'')]public static extern bool SetProcessWorkingSetSize(IntPtr h,IntPtr min,IntPtr max);}';Add-Type $c -EA SilentlyContinue;Get-Process | Where-Object {$_.WorkingSet64 -gt 50MB -and $_.ProcessName -notmatch 'LDPlayer|dnplayer|LdVBoxHeadless|svchost|System|Idle|csrss|smss|lsass|explorer|wininit|winlogon|services|dwm|fontdrvhost|Memory Compression|Registry|MsMpEng|NisSrv|SecurityHealth|spoolsv|WmiPrvSE'} | ForEach-Object { try{$h=$_.Handle;if($h){[void][WS]::SetProcessWorkingSetSize($h,[IntPtr]::new(-1),[IntPtr]::new(-1))}}catch{} }" ^>nul 2^>^&1 >> "%KILL_SCRIPT%"
+echo ) >> "%KILL_SCRIPT%"
+echo goto :loop >> "%KILL_SCRIPT%"
 schtasks /Delete /TN "KillBloat" /F >nul 2>&1
 schtasks /Create /TN "KillBloat" /SC ONLOGON /TR "cmd /c start /min \"%KILL_SCRIPT%\"" /RL HIGHEST /F >nul 2>&1
 echo   - Auto-kill bloat LOOP scheduled at logon (kills + trims every 60s)
@@ -1747,11 +1861,17 @@ netsh int tcp set global ecncapability=enabled >nul 2>&1
 netsh int tcp set heuristics disabled >nul 2>&1
 :: Disable Task Offload to prevent packet drops and latency spikes in Virtual NICs
 netsh int tcp set global taskoffload=disabled >nul 2>&1
-:: Force disable LSO (Large Send Offload) and Checksum Offload on all Virtual Adapters
-%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "Get-NetAdapter | Disable-NetAdapterChecksumOffload -IpIPv4 -TcpIPv4 -UdpIPv4 -ErrorAction SilentlyContinue; Get-NetAdapter | Disable-NetAdapterLso -IPv4 -IPv6 -ErrorAction SilentlyContinue; Get-NetAdapter | Disable-NetAdapterRsc -IPv4 -IPv6 -ErrorAction SilentlyContinue" >nul 2>&1
+:: Force disable LSO (Large Send Offload), Checksum Offload, and Interrupt Moderation on all Adapters
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "Get-NetAdapter | Disable-NetAdapterChecksumOffload -IpIPv4 -TcpIPv4 -UdpIPv4 -ErrorAction SilentlyContinue; Get-NetAdapter | Disable-NetAdapterLso -IPv4 -IPv6 -ErrorAction SilentlyContinue; Get-NetAdapter | Disable-NetAdapterRsc -IPv4 -IPv6 -ErrorAction SilentlyContinue; Get-NetAdapter | Set-NetAdapterAdvancedProperty -DisplayName 'Interrupt Moderation' -DisplayValue 'Disabled' -ErrorAction SilentlyContinue" >nul 2>&1
 :: Maximize TCP connection limit for heavy automation/farming
 reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" /v MaxUserPort /t REG_DWORD /d 65534 /f >nul
 reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" /v Tcp1323Opts /t REG_DWORD /d 1 /f >nul
+
+:: AFD Socket Buffers tuning for massive connection handling (stable connections for many bots)
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\AFD\Parameters" /v LargeBufferSize /t REG_DWORD /d 81920 /f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\AFD\Parameters" /v MediumBufferSize /t REG_DWORD /d 30096 /f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\AFD\Parameters" /v SmallBufferSize /t REG_DWORD /d 1280 /f >nul
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\AFD\Parameters" /v TransmitWorker /t REG_DWORD /d 32 /f >nul
 
 :: Disable Mouse Acceleration (Enhance Pointer Precision) to reduce remote control mouse delay
 reg add "HKCU\Control Panel\Mouse" /v MouseSpeed /t REG_SZ /d 0 /f >nul
@@ -1877,13 +1997,16 @@ echo   - Idle tasks flushed
 :: Useful shortcut to manually flush RAM when needed
 set "RECLAIM=%PCL_DIR%\reclaim_ram.bat"
 (
-echo @echo off
-echo echo Reclaiming RAM...
-echo %%SystemRoot%%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "$ErrorActionPreference='SilentlyContinue';$c='using System;using System.Runtime.InteropServices;public class WS{[DllImport(''kernel32.dll'')]public static extern bool SetProcessWorkingSetSize(IntPtr h,IntPtr min,IntPtr max);}';Add-Type $c -EA SilentlyContinue;Get-Process ^| Where-Object {$_.ProcessName -notmatch 'LDPlayer^|dnplayer^|svchost^|System^|Idle^|csrss^|smss^|lsass^|explorer^|wininit^|winlogon^|services^|dwm^|fontdrvhost^|Memory Compression^|Registry^|MsMpEng^|NisSrv^|SecurityHealth^|spoolsv^|WmiPrvSE'} ^| ForEach-Object { try{$h=$_.Handle;if($h){[void][WS]::SetProcessWorkingSetSize($h,[IntPtr]::new(-1),[IntPtr]::new(-1))}}catch{} }"
-echo rundll32.exe advapi32.dll,ProcessIdleTasks
-echo echo Done. RAM reclaimed.
-echo timeout /t 3
-) > "%RECLAIM%"
+echo @echo off > "%RECLAIM%"
+echo echo Reclaiming RAM... >> "%RECLAIM%"
+echo if exist "%ProgramData%\PCL\trim_ram.exe" ( >> "%RECLAIM%"
+echo     "%ProgramData%\PCL\trim_ram.exe" ^>nul 2^>^&1 >> "%RECLAIM%"
+echo ) else ( >> "%RECLAIM%"
+echo     %%SystemRoot%%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "$ErrorActionPreference='SilentlyContinue';$c='using System;using System.Runtime.InteropServices;public class WS{[DllImport(''kernel32.dll'')]public static extern bool SetProcessWorkingSetSize(IntPtr h,IntPtr min,IntPtr max);}';Add-Type $c -EA SilentlyContinue;Get-Process | Where-Object {$_.ProcessName -notmatch 'LDPlayer|dnplayer|LdVBoxHeadless|svchost|System|Idle|csrss|smss|lsass|explorer|wininit|winlogon|services|dwm|fontdrvhost|Memory Compression|Registry|MsMpEng|NisSrv|SecurityHealth|spoolsv|WmiPrvSE'} | ForEach-Object { try{$h=$_.Handle;if($h){[void][WS]::SetProcessWorkingSetSize($h,[IntPtr]::new(-1),[IntPtr]::new(-1))}}catch{} }" >> "%RECLAIM%"
+echo ) >> "%RECLAIM%"
+echo rundll32.exe advapi32.dll,ProcessIdleTasks >> "%RECLAIM%"
+echo echo Done. RAM reclaimed. >> "%RECLAIM%"
+echo timeout /t 3 >> "%RECLAIM%"
 %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "$desktop=[Environment]::GetFolderPath('CommonDesktopDirectory');$s=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $desktop 'Reclaim RAM.lnk'));$s.TargetPath='cmd.exe';$s.Arguments='/c ""%RECLAIM%""';$s.IconLocation='%SystemRoot%\System32\shell32.dll,80';$s.WindowStyle=7;$s.Save()" >nul 2>&1
 echo   - Reclaim RAM shortcut created on Desktop
 
