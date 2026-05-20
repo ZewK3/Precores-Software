@@ -374,12 +374,17 @@ reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy" /v LetAppsRunInBac
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\CrashControl" /v CrashDumpEnabled /t REG_DWORD /d 0 /f >nul
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\CrashControl" /v LogEvent /t REG_DWORD /d 0 /f >nul
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\CrashControl" /v AutoReboot /t REG_DWORD /d 1 /f >nul
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v DisablePagingExecutive /t REG_DWORD /d 0 /f >nul
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v LargeSystemCache /t REG_DWORD /d 0 /f >nul
-:: Dynamic DisablePagingExecutive: keep kernel in RAM if >=8GB, allow paging if <8GB
-for /f "usebackq" %%R in (`powershell -NoProfile -Command "if([Math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1GB) -ge 8){1}else{0}"`) do (
-    reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v DisablePagingExecutive /t REG_DWORD /d %%R /f >nul
+:: Dynamic DisablePagingExecutive + SvcHostSplit + IoPageLockLimit: ALL computed from RAM in ONE PS call
+:: This saves ~8 seconds vs 4 separate PowerShell startups
+for /f "usebackq tokens=1-5" %%A in (`powershell -NoProfile -Command "$m=(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory;$gb=[Math]::Round($m/1GB);$dpe=if($gb -ge 8){1}else{0};$svk=[Math]::Round($m/1KB);$io=[Math]::Round($m*0.1);if($gb -le 4){$pfn='4096';$pfx='8192'}elseif($gb -le 8){$pfn='8192';$pfx='16384'}elseif($gb -le 16){$pfn='8192';$pfx='24576'}else{$pfn='16384';$pfx='32768'};Write-Host $dpe $svk $io $pfn $pfx"`) do (
+    reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v DisablePagingExecutive /t REG_DWORD /d %%A /f >nul
+    set "SVCHOSTSPLIT=%%B"
+    set "IOPAGELIMIT=%%C"
+    set "PF_MIN=%%D"
+    set "PF_MAX=%%E"
 )
+:: (DisablePagingExecutive already set by consolidated RAM query above)
 
 :: LDPlayer specifics (Disable Memory Integrity/Core Isolation, Enable HAGS, set Power Plan)
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity" /v Enabled /t REG_DWORD /d 0 /f >nul
@@ -435,17 +440,18 @@ reg add "HKCU\Software\Policies\Microsoft\Windows\Explorer" /v DisableSearchBoxS
 :: ---- EXTRA LOW-RAM TWEAKS (for AI dev tools: VS Code, Verdent, Kiro) ----
 
 :: Merge svchost processes dynamically based on RAM (saves ~150-300MB)
-:: Set threshold to installed RAM in KB so Windows groups all services in fewer svchost.exe
-for /f "usebackq" %%R in (`powershell -NoProfile -Command "[Math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1KB)"`) do (
-    reg add "HKLM\SYSTEM\CurrentControlSet\Control" /v SvcHostSplitThresholdInKB /t REG_DWORD /d %%R /f >nul
+:: (Uses SVCHOSTSPLIT value computed by consolidated RAM query in Phase 5)
+if defined SVCHOSTSPLIT (
+    reg add "HKLM\SYSTEM\CurrentControlSet\Control" /v SvcHostSplitThresholdInKB /t REG_DWORD /d !SVCHOSTSPLIT! /f >nul
 )
 
 :: Don't clear pagefile on shutdown (faster shutdown, no perf gain)
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v ClearPageFileAtShutdown /t REG_DWORD /d 0 /f >nul
 
 :: Dynamic I/O page lock limit based on RAM (10% of RAM in bytes, better disk I/O for compilers/AI)
-for /f "usebackq" %%I in (`powershell -NoProfile -Command "[Math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory*0.1)"`) do (
-    reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v IoPageLockLimit /t REG_DWORD /d %%I /f >nul
+:: (Uses IOPAGELIMIT value computed by consolidated RAM query in Phase 5)
+if defined IOPAGELIMIT (
+    reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v IoPageLockLimit /t REG_DWORD /d !IOPAGELIMIT! /f >nul
 )
 
 :: Faster shutdown timers
@@ -583,8 +589,9 @@ echo [6/11] Visual Performance Tweaks... >> "%LOG%"
 :: Set Visual Effects to Custom (preserve themes, disable heavy animations)
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" /v VisualFXSetting /t REG_DWORD /d 3 /f >nul
 :: UserPreferencesMask: UIEffects ON (themes), font smoothing ON, disable animations
-:: Byte2=0x07 keeps UIEffects bit (visual styles/themes active)
-reg add "HKCU\Control Panel\Desktop" /v UserPreferencesMask /t REG_BINARY /d 9012078012000000 /f >nul
+:: Byte0=0x91: bit0=ActiveDesktop/Wallpaper ON, bit4=MenuUnderlines OFF, bit7=ActiveWindowTracking OFF
+:: Byte1=0x12: bit1=GradientCaptions, bit4=HotTracking
+reg add "HKCU\Control Panel\Desktop" /v UserPreferencesMask /t REG_BINARY /d 9112078012000000 /f >nul
 :: Keep transparency for theme effects (commented out = stays enabled)
 :: reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v EnableTransparency /t REG_DWORD /d 0 /f >nul
 :: Disable animations (performance - does NOT affect themes)
@@ -600,15 +607,27 @@ set "WP_DST=%SystemRoot%\Web\Wallpaper\PCL\logo-nen.png"
 if exist "%WP_SRC%" (
     if not exist "%SystemRoot%\Web\Wallpaper\PCL" mkdir "%SystemRoot%\Web\Wallpaper\PCL" >nul 2>&1
     copy /y "%WP_SRC%" "%WP_DST%" >nul 2>&1
+    :: Set wallpaper for current user
     reg add "HKCU\Control Panel\Desktop" /v Wallpaper /t REG_SZ /d "%WP_DST%" /f >nul
     reg add "HKCU\Control Panel\Desktop" /v WallpaperStyle /t REG_SZ /d 10 /f >nul
     reg add "HKCU\Control Panel\Desktop" /v TileWallpaper /t REG_SZ /d 0 /f >nul
-    :: Also set for default user profile (new users get this wallpaper too)
+    :: Set for default user profile (new users get this wallpaper too)
     reg add "HKU\.DEFAULT\Control Panel\Desktop" /v Wallpaper /t REG_SZ /d "%WP_DST%" /f >nul 2>&1
     reg add "HKU\.DEFAULT\Control Panel\Desktop" /v WallpaperStyle /t REG_SZ /d 10 /f >nul 2>&1
     reg add "HKU\.DEFAULT\Control Panel\Desktop" /v TileWallpaper /t REG_SZ /d 0 /f >nul 2>&1
-    :: Force wallpaper refresh
-    RUNDLL32.EXE user32.dll,UpdatePerUserSystemParameters ,1 ,True >nul 2>&1
+    :: Force wallpaper via Group Policy (works regardless of user profile state)
+    reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP" /v DesktopImagePath /t REG_SZ /d "%WP_DST%" /f >nul 2>&1
+    reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP" /v DesktopImageUrl /t REG_SZ /d "%WP_DST%" /f >nul 2>&1
+    reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\PersonalizationCSP" /v DesktopImageStatus /t REG_DWORD /d 1 /f >nul 2>&1
+    reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\Personalization" /v DesktopImagePath /t REG_SZ /d "%WP_DST%" /f >nul 2>&1
+    reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\Personalization" /v DesktopImageStyle /t REG_DWORD /d 10 /f >nul 2>&1
+    :: Force refresh via temp .ps1 script (avoids all batch escaping issues)
+    :: Use Start-Job with timeout to prevent hanging if desktop isn't ready
+    set "WP_PS=%TEMP%\set_wallpaper.ps1"
+    echo Add-Type 'using System;using System.Runtime.InteropServices;public class WP{[DllImport("user32.dll",CharSet=CharSet.Unicode)]public static extern int SystemParametersInfo(int a,int b,string c,int d);}' > "!WP_PS!"
+    echo [WP]::SystemParametersInfo(0x0014,0,'%WP_DST%',3) >> "!WP_PS!"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "$j=Start-Job -ScriptBlock{powershell -NoProfile -ExecutionPolicy Bypass -File '%TEMP%\set_wallpaper.ps1'};if(-not(Wait-Job $j -Timeout 15)){Stop-Job $j;Remove-Job $j}else{Remove-Job $j}" >nul 2>&1
+    del /f /q "!WP_PS!" >nul 2>&1
     echo   - Wallpaper set: PreCore Lab branding
 ) else (
     echo   - Wallpaper logo-nen.png not found, skipping
@@ -619,10 +638,12 @@ set "AVT_DST=%ProgramData%\Microsoft\User Account Pictures\pcl-avatar.png"
 if exist "%AVT_SRC%" (
     copy /y "%AVT_SRC%" "%AVT_DST%" >nul 2>&1
     :: Use SetUserTile API to set account picture for current user
+    :: Timeout after 15s - shell32 #262 can hang if shell isn't ready
     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-        "$src='%AVT_DST%';" ^
+        "$j=Start-Job -ScriptBlock{" ^
         "Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class UserTile { [DllImport(\"shell32.dll\", EntryPoint=\"#262\", CharSet=CharSet.Unicode)] public static extern int SetUserTile(string username, int reserved, string picture); }';" ^
-        "[UserTile]::SetUserTile('%USERNAME%', 0, $src)" >nul 2>&1
+        "[UserTile]::SetUserTile('%USERNAME%', 0, '%AVT_DST%')" ^
+        "};if(-not(Wait-Job $j -Timeout 15)){Stop-Job $j;Remove-Job $j}else{Remove-Job $j}" >nul 2>&1
     :: Also set as default account picture
     copy /y "%AVT_SRC%" "%ProgramData%\Microsoft\User Account Pictures\user.png" >nul 2>&1
     copy /y "%AVT_SRC%" "%ProgramData%\Microsoft\User Account Pictures\guest.png" >nul 2>&1
@@ -636,8 +657,8 @@ reg add "HKCU\Control Panel\Desktop" /v CursorBlinkRate /t REG_SZ /d -1 /f >nul
 reg add "HKCU\Control Panel\Desktop" /v SmoothScroll /t REG_DWORD /d 0 /f >nul
 :: Disable Explorer thumbnails/preview handlers for lower RAM and disk churn
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v DisablePreviewPane /t REG_DWORD /d 1 /f >nul
+:: (IconsOnly already set in Phase 5 - line 558)
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v DisableThumbnailCache /t REG_DWORD /d 1 /f >nul
-reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v IconsOnly /t REG_DWORD /d 1 /f >nul
 :: Dark mode
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v AppsUseLightTheme /t REG_DWORD /d 0 /f >nul
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v SystemUsesLightTheme /t REG_DWORD /d 0 /f >nul
@@ -834,8 +855,13 @@ echo   - Removed MusNotification
 :: Temp/Logs/Caches
 del /f /q /s "%SystemRoot%\Temp\*" >nul 2>&1
 del /f /q /s "%SystemRoot%\Prefetch\*" >nul 2>&1
-del /f /q /s "%SystemRoot%\SoftwareDistribution\Download\*" >nul 2>&1
-del /f /q /s "%SystemRoot%\Logs\*" >nul 2>&1
+if exist "%SystemRoot%\SoftwareDistribution\Download" del /f /q /s "%SystemRoot%\SoftwareDistribution\Download\*" >nul 2>&1
+:: Clean logs but preserve our PCL log directory
+for /d %%D in ("%SystemRoot%\Logs\*") do (
+    echo %%~nxD | findstr /i "PCL" >nul 2>&1
+    if !errorlevel! neq 0 rmdir /s /q "%%D" >nul 2>&1
+)
+for %%F in ("%SystemRoot%\Logs\*.*") do del /f /q "%%F" >nul 2>&1
 del /f /q /s "%SystemRoot%\ServiceProfiles\LocalService\AppData\Local\FontCache\*" >nul 2>&1
 del /f /q /s "%ProgramData%\Microsoft\Windows\WER\*" >nul 2>&1
 del /f /q /s "%ProgramData%\Microsoft\Diagnosis\ETLLogs\*" >nul 2>&1
@@ -1099,12 +1125,9 @@ powercfg /h off
 echo   - Hibernate disabled
 
 :: Optimize pagefile for LDPlayer (larger pagefile = more emulator instances)
-set "PF_MIN=4096"
-set "PF_MAX=16384"
-for /f "usebackq tokens=1,2" %%A in (`powershell -NoProfile -Command "$r=[Math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1GB); if($r -le 4){'4096 8192'}elseif($r -le 8){'8192 16384'}elseif($r -le 16){'8192 24576'}else{'16384 32768'}"`) do (
-    set "PF_MIN=%%A"
-    set "PF_MAX=%%B"
-)
+:: PF_MIN and PF_MAX were pre-computed in Phase 5 consolidated RAM query
+if not defined PF_MIN set "PF_MIN=8192"
+if not defined PF_MAX set "PF_MAX=16384"
 wmic computersystem where name="%COMPUTERNAME%" set AutomaticManagedPagefile=False <nul >nul 2>&1
 wmic pagefileset where name="C:\\pagefile.sys" set InitialSize=!PF_MIN!,MaximumSize=!PF_MAX! <nul >nul 2>&1
 if not exist "C:\pagefile.sys" wmic pagefileset create name="C:\pagefile.sys" <nul >nul 2>&1
@@ -1127,7 +1150,7 @@ echo   - WinSxS cleaned
 :: ---- HARDWARE / CPU UNLOCK TWEAKS ----
 :: Disable VBS (Virtualization Based Security) and Core Isolation (Memory Integrity)
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard" /v EnableVirtualizationBasedSecurity /t REG_DWORD /d 0 /f >nul
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity" /v Enabled /t REG_DWORD /d 0 /f >nul
+:: (HypervisorEnforcedCodeIntegrity already set in Phase 5)
 :: Disable Spectre and Meltdown CPU Mitigations (Unlock 100% native CPU speed, safe for isolated VMs)
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v FeatureSettingsOverride /t REG_DWORD /d 3 /f >nul
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v FeatureSettingsOverrideMask /t REG_DWORD /d 3 /f >nul
@@ -1150,12 +1173,7 @@ echo   - Boot tweaks applied
 
 :: Force ENABLE Memory Compression (effectively gives ~30-50% more usable RAM on any system)
 echo   - Enabling Memory Compression...
-powershell -NoProfile -Command "Enable-MMAgent -mc" >nul 2>&1
-powershell -NoProfile -Command "Enable-MMAgent -PageCombining" >nul 2>&1
-:: Disable prefetcher/superfetch DATA collection but keep MMAgent service alive for compression
-powershell -NoProfile -Command "Disable-MMAgent -ApplicationLaunchPrefetching" >nul 2>&1
-powershell -NoProfile -Command "Disable-MMAgent -ApplicationPreLaunch" >nul 2>&1
-powershell -NoProfile -Command "Disable-MMAgent -OperationAPI" >nul 2>&1
+powershell -NoProfile -Command "Enable-MMAgent -MemoryCompression;Enable-MMAgent -PageCombining;Disable-MMAgent -ApplicationLaunchPrefetching;Disable-MMAgent -ApplicationPreLaunch;Disable-MMAgent -OperationAPI" >nul 2>&1
 
 :: Process Scheduling Priority (Set to 24: Optimize for Background Services)
 :: This gives equal, long CPU timeslices to all running bots/apps, maximizing throughput instead of just the active window
@@ -1186,7 +1204,7 @@ fsutil behavior set disableencryption 1 >nul 2>&1
 echo   - NTFS tuned (8.3 off, last-access off, encryption off, memory level 2)
 
 :: Enable Hardware-Accelerated GPU Scheduling (HAGS) for LDPlayer performance
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" /v HwSchMode /t REG_DWORD /d 2 /f >nul
+:: (HwSchMode already set to 2 in Phase 5)
 echo   - Hardware GPU Scheduling ENABLED for LDPlayer
 
 :: Disable Automatic Maintenance (stops random background defrag/scan/cleanup during work hours)
@@ -1222,17 +1240,14 @@ echo   - Desktop Heap minimized
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v NonPagedPoolSize /t REG_DWORD /d 0 /f >nul
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v PagedPoolSize /t REG_DWORD /d 0 /f >nul
 
-:: Reduce system file cache size (Windows can use 200MB+, we limit it)
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v LargeSystemCache /t REG_DWORD /d 0 /f >nul
+:: (LargeSystemCache already set to 0 in Phase 5)
 echo   - Kernel memory pools optimized
 
-:: Disable Windows Error Reporting memory dumps completely
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\CrashControl" /v CrashDumpEnabled /t REG_DWORD /d 0 /f >nul
+:: (CrashDumpEnabled already set to 0 in Phase 5)
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\CrashControl" /v DumpFileSize /t REG_DWORD /d 0 /f >nul
 
 :: Kill Edge completely on startup (steals 100-300MB in background)
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v StartupBoostEnabled /t REG_DWORD /d 0 /f >nul
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v BackgroundModeEnabled /t REG_DWORD /d 0 /f >nul
+:: (StartupBoostEnabled and BackgroundModeEnabled already set in Phase 5)
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v HardwareAccelerationModeEnabled /t REG_DWORD /d 0 /f >nul
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v SleepingTabsEnabled /t REG_DWORD /d 1 /f >nul
 :: Remove Edge auto-update service files
@@ -1250,8 +1265,7 @@ reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection" /v LimitDiagno
 reg add "HKLM\SYSTEM\CurrentControlSet\Services\TimeBrokerSvc" /v Start /t REG_DWORD /d 4 /f >nul
 echo   - Runtime/Time Broker disabled
 
-:: Disable Windows Compatibility Telemetry (CompatTelRunner.exe eats 50-200MB)
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\AppCompat" /v DisableInventory /t REG_DWORD /d 1 /f >nul
+:: (DisableInventory already set to 1 in Phase 5)
 schtasks /Change /TN "\Microsoft\Windows\Application Experience\Microsoft Compatibility Appraiser" /Disable >nul 2>&1
 schtasks /Change /TN "\Microsoft\Windows\Application Experience\ProgramDataUpdater" /Disable >nul 2>&1
 
@@ -1335,11 +1349,11 @@ echo     SecurityHealthSystray.exe SecurityHealthService.exe
 echo     OneDrive.exe Teams.exe
 echo ^) do taskkill /f /im %%%%P ^>nul 2^>^&1
 echo :: Trim working set of heavy processes to reclaim idle RAM
-echo powershell -NoProfile -Command "Get-Process | Where-Object {$_.WorkingSet64 -gt 50MB -and $_.ProcessName -notmatch 'LDPlayer|dnplayer|svchost|System|csrss|smss|lsass|explorer'} | ForEach-Object { $_.MinWorkingSet = 204800 }" ^>nul 2^>^&1
+echo powershell -NoProfile -Command "$ErrorActionPreference='SilentlyContinue';$c='using System;using System.Runtime.InteropServices;public class WS{[DllImport(''kernel32.dll'')]public static extern bool SetProcessWorkingSetSize(IntPtr h,IntPtr min,IntPtr max);}';Add-Type $c -EA SilentlyContinue;Get-Process ^| Where-Object {$_.WorkingSet64 -gt 50MB -and $_.ProcessName -notmatch 'LDPlayer^|dnplayer^|svchost^|System^|Idle^|csrss^|smss^|lsass^|explorer^|wininit^|winlogon^|services^|dwm^|fontdrvhost^|Memory Compression^|Registry^|MsMpEng^|NisSrv^|SecurityHealth^|spoolsv^|WmiPrvSE'} ^| ForEach-Object { try{$h=$_.Handle;if($h){[void][WS]::SetProcessWorkingSetSize($h,[IntPtr]::new(-1),[IntPtr]::new(-1))}}catch{} }" ^>nul 2^>^&1
 echo goto :loop
 ) > "%KILL_SCRIPT%"
 schtasks /Delete /TN "KillBloat" /F >nul 2>&1
-schtasks /Create /TN "KillBloat" /SC ONLOGON /TR "cmd /c start /min \"%KILL_SCRIPT%\"" /RU "PCL" /IT /RL HIGHEST /F >nul 2>&1
+schtasks /Create /TN "KillBloat" /SC ONLOGON /TR "cmd /c start /min \"%KILL_SCRIPT%\"" /RL HIGHEST /F >nul 2>&1
 echo   - Auto-kill bloat LOOP scheduled at logon (kills + trims every 60s)
 
 echo   EXTREME RAM saving tweaks applied.
@@ -1391,8 +1405,7 @@ reg add "HKLM\SYSTEM\CurrentControlSet\Control\Power" /v CsEnabled /t REG_DWORD 
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Power" /v PlatformAoAcOverride /t REG_DWORD /d 0 /f >nul
 echo   - Connected Standby disabled
 
-:: Set foreground/background quantum equal (all LDPlayer instances get equal CPU time)
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\PriorityControl" /v Win32PrioritySeparation /t REG_DWORD /d 24 /f >nul
+:: (Win32PrioritySeparation already set to 24 in Phase 9)
 :: Set IRQ priority to 14 (highest user-accessible level for I/O)
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\PriorityControl" /v IRQ8Priority /t REG_DWORD /d 1 /f >nul
 echo   - IRQ and quantum priority tuned
@@ -1490,10 +1503,11 @@ echo   - Firewall disabled
 netsh advfirewall firewall add rule name="LDPlayer ADB" dir=in action=allow protocol=TCP localport=5555-5600 >nul 2>&1
 echo   - LDPlayer ADB firewall rule added
 
-:: Disable Windows Firewall service itself (saves ~10MB)
-sc stop mpssvc >nul 2>&1
-sc config mpssvc start= disabled >nul 2>&1
-echo   - Firewall service disabled
+:: NOTE: Do NOT disable mpssvc service - BFE depends on it and many network services break.
+:: Firewall is already OFF via netsh above, which is sufficient.
+:: sc stop mpssvc >nul 2>&1
+:: sc config mpssvc start= disabled >nul 2>&1
+echo   - Firewall disabled via netsh (service kept for BFE compatibility)
 
 echo   Network + LDPlayer tweaks done.
 echo   Network + LDPlayer tweaks done >> "%LOG%"
@@ -1563,7 +1577,7 @@ set "RECLAIM=%PCL_DIR%\reclaim_ram.bat"
 (
 echo @echo off
 echo echo Reclaiming RAM...
-echo powershell -NoProfile -Command "Get-Process | Where-Object {$_.ProcessName -notmatch 'LDPlayer|dnplayer|System|csrss|smss|lsass'} | ForEach-Object { $_.MinWorkingSet = 204800 }"
+echo powershell -NoProfile -Command "$ErrorActionPreference='SilentlyContinue';$c='using System;using System.Runtime.InteropServices;public class WS{[DllImport(''kernel32.dll'')]public static extern bool SetProcessWorkingSetSize(IntPtr h,IntPtr min,IntPtr max);}';Add-Type $c -EA SilentlyContinue;Get-Process ^| Where-Object {$_.ProcessName -notmatch 'LDPlayer^|dnplayer^|svchost^|System^|Idle^|csrss^|smss^|lsass^|explorer^|wininit^|winlogon^|services^|dwm^|fontdrvhost^|Memory Compression^|Registry^|MsMpEng^|NisSrv^|SecurityHealth^|spoolsv^|WmiPrvSE'} ^| ForEach-Object { try{$h=$_.Handle;if($h){[void][WS]::SetProcessWorkingSetSize($h,[IntPtr]::new(-1),[IntPtr]::new(-1))}}catch{} }"
 echo rundll32.exe advapi32.dll,ProcessIdleTasks
 echo echo Done. RAM reclaimed.
 echo timeout /t 3

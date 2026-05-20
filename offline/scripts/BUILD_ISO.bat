@@ -13,7 +13,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 set "SCRIPTS_DIR=%~dp0"
 if "%SCRIPTS_DIR:~-1%"=="\" set "SCRIPTS_DIR=%SCRIPTS_DIR:~0,-1%"
 for %%I in ("%SCRIPTS_DIR%\..") do set "BASE_DIR=%%~fI"
-set "ISO_SRC=%BASE_DIR%\tiny10 x64 beta 2.iso"
+set "ISO_SRC=%BASE_DIR%\tiny10 x64 23h.iso"
 set "ISO_FILES=%BASE_DIR%\ISO_FILES"
 set "OUTPUT_ISO=%BASE_DIR%\tiny10_optimized_ldplayer.iso"
 set "OSCDIMG=C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\amd64\Oscdimg\oscdimg.exe"
@@ -141,6 +141,59 @@ if exist "%SCRIPTS_DIR%\avt.png" (
     copy /y "%SCRIPTS_DIR%\avt.png" "%ISO_FILES%\sources\$OEM$\$1\InstallScripts\avt.png" >nul
     echo [*] User avatar avt.png included.
 )
+if exist "%SCRIPTS_DIR%\nen.png" (
+    copy /y "%SCRIPTS_DIR%\nen.png" "%ISO_FILES%\sources\$OEM$\$1\InstallScripts\nen.png" >nul
+    echo [*] Chrome background nen.png included.
+)
+if exist "%SCRIPTS_DIR%\precore-pc.bat" (
+    copy /y "%SCRIPTS_DIR%\precore-pc.bat" "%ISO_FILES%\sources\$OEM$\$1\InstallScripts\precore-pc.bat" >nul
+    echo [*] PreCore PC maintenance tool included.
+)
+
+:: --- Create SetupComplete.cmd fallback ---
+:: This runs AFTER Windows Setup finishes, BEFORE any user logon
+:: Write to temp first, then copy (avoids $$ path issues with redirect)
+echo [*] Creating SetupComplete.cmd fallback...
+set "SC_TEMP=%TEMP%\SetupComplete.cmd"
+> "%SC_TEMP%" echo @echo off
+>> "%SC_TEMP%" echo :: SetupComplete.cmd - Register RunOnce for post-install
+>> "%SC_TEMP%" echo if not exist "C:\InstallScripts\RunAll.bat" exit /b 0
+>> "%SC_TEMP%" echo if exist "C:\InstallScripts\.completed" exit /b 0
+>> "%SC_TEMP%" echo reg add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce /v PostInstall /d "C:\InstallScripts\RunAll.bat" /f
+
+set "SC_DST=%ISO_FILES%\sources\$OEM$"
+mkdir "%SC_DST%\$$\Setup\Scripts" 2>nul
+copy /y "%SC_TEMP%" "%SC_DST%\$$\Setup\Scripts\SetupComplete.cmd" >nul 2>&1
+del /f /q "%SC_TEMP%" >nul 2>&1
+
+if exist "%SC_DST%\$$\Setup\Scripts\SetupComplete.cmd" (
+    echo [*] SetupComplete.cmd fallback created.
+) else (
+    echo [WARN] SetupComplete.cmd could not be created - trying alternate method...
+    :: Alternate: create via PowerShell to avoid all batch escaping
+    powershell -NoProfile -Command "$d='%ISO_FILES%\sources\$OEM$\$$\Setup\Scripts';New-Item -ItemType Directory -Path $d -Force|Out-Null;'@echo off','if not exist \"C:\InstallScripts\RunAll.bat\" exit /b 0','if exist \"C:\InstallScripts\.completed\" exit /b 0','start \"PostInstall\" /wait cmd /c \"C:\InstallScripts\RunAll.bat\"'|Set-Content (Join-Path $d 'SetupComplete.cmd') -Encoding ASCII"
+    if exist "%SC_DST%\$$\Setup\Scripts\SetupComplete.cmd" (
+        echo [*] SetupComplete.cmd created via PowerShell fallback.
+    ) else (
+        echo [WARN] SetupComplete.cmd creation failed - FirstLogonCommands will be used instead.
+    )
+)
+
+:: --- Verify critical files exist ---
+echo [*] Verifying file copy...
+set "VERIFY_OK=1"
+for %%F in (RunAll.bat QuickOptimize.bat QuickInstall.bat) do (
+    if not exist "%ISO_FILES%\sources\$OEM$\$1\InstallScripts\%%F" (
+        echo [ERROR] MISSING: %%F - copy failed!
+        set "VERIFY_OK=0"
+    )
+)
+if "!VERIFY_OK!"=="0" (
+    echo [ERROR] Critical files missing! ISO build aborted.
+    pause
+    exit /b 1
+)
+echo [OK] All critical files verified.
 
 echo [OK] Phase 2 complete.
 

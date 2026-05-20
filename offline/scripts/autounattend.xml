@@ -115,12 +115,13 @@
         <SkipUserOOBE>true</SkipUserOOBE>
       </OOBE>
 
-      <!-- Run all setup scripts via wrapper -->
+      <!-- Register RunOnce so scripts run AFTER desktop loads (visible CMD) -->
       <FirstLogonCommands>
         <SynchronousCommand wcm:action="add">
           <Order>1</Order>
-          <CommandLine>cmd /c "C:\InstallScripts\RunAll.bat"</CommandLine>
-          <Description>Run QuickOptimize + QuickInstall via wrapper</Description>
+          <CommandLine>cmd /c reg add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce /v PostInstall /d "C:\InstallScripts\RunAll.bat" /f</CommandLine>
+          <Description>Register RunOnce for post-install scripts</Description>
+          <RequiresUserInput>false</RequiresUserInput>
         </SynchronousCommand>
       </FirstLogonCommands>
 
