@@ -8,6 +8,7 @@
 title RunAll - Post-Install Setup
 color 0A
 setlocal EnableExtensions EnableDelayedExpansion
+cd /d "%SystemRoot%"
 
 set "SCRIPT_DIR=%~dp0"
 if "%SCRIPT_DIR:~-1%"=="\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
@@ -74,5 +75,5 @@ endlocal
 :: Self-cleanup: schedule deletion after this process exits
 :: Use a delayed cmd to avoid file-lock issues
 :: Note: %~dp0 works after endlocal since it's a batch parameter, not a variable
-start /min "" cmd /c "timeout /t 10 /nobreak >nul & rmdir /s /q %~dp0 >nul 2>&1"
+start /min "" cmd /c "timeout /t 10 /nobreak >nul & rmdir /s /q "%~dp0" >nul 2>&1"
 exit /b 0

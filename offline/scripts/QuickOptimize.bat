@@ -8,6 +8,7 @@
 title QuickOptimize - Windows Optimization
 color 0E
 setlocal EnableExtensions EnableDelayedExpansion
+cd /d "%SystemRoot%"
 
 set "PCL_DIR=%SystemRoot%\Logs\PCL"
 if not exist "%PCL_DIR%" mkdir "%PCL_DIR%" >nul 2>&1
@@ -1150,21 +1151,29 @@ set "CPU_DHEAP_I=4096"
 set "CPU_DHEAP_NI=2048"
 set "CPU_MAXWORK=8192"
 set "CPU_MAXREQ=16"
-for /f "usebackq tokens=1-14 delims=|" %%A in (`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "$c=Get-CimInstance Win32_Processor|Select -First 1;$co=$c.NumberOfCores;$th=$c.NumberOfLogicalProcessors;$l2=if($c.L2CacheSize-gt0){$c.L2CacheSize}else{1024};$l3=if($c.L3CacheSize-gt0){$c.L3CacheSize}else{8192};$mh=$c.MaxClockSpeed;$bp=if($mh-ge3500){40}elseif($mh-ge2500){60}else{80};$ti=if($mh-ge3500){10}elseif($mh-ge2500){15}else{20};$it=if($co-ge16){70}elseif($co-ge8){60}else{50};$wc=[Math]::Max(4,[Math]::Min(32,$co));$wd=[Math]::Max(4,[Math]::Min(16,[Math]::Floor($co/2)));$dhi=if($co-ge16){8192}elseif($co-ge8){4096}else{2048};$dhni=[Math]::Floor($dhi/2);$mwi=[Math]::Max(4096,$th*256);$mrt=[Math]::Max(16,[Math]::Min(64,$co*2));Write-Host \"$co|$th|$l2|$l3|$mh|$bp|$ti|$it|$wc|$wd|$dhi|$dhni|$mwi|$mrt\""`) do (
-    set "CPU_CORES=%%A"
-    set "CPU_THREADS=%%B"
-    set "CPU_L2=%%C"
-    set "CPU_L3=%%D"
-    set "CPU_MHZ=%%E"
-    set "CPU_BOOST=%%F"
-    set "CPU_TIMER=%%G"
-    set "CPU_INC_TH=%%H"
-    set "CPU_WORKERS_C=%%I"
-    set "CPU_WORKERS_D=%%J"
-    set "CPU_DHEAP_I=%%K"
-    set "CPU_DHEAP_NI=%%L"
-    set "CPU_MAXWORK=%%M"
-    set "CPU_MAXREQ=%%N"
+
+set "CPU_OUT=%TEMP%\cpu_out.txt"
+if exist "%CPU_OUT%" del /f /q "%CPU_OUT%" >nul 2>&1
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "$c=Get-CimInstance Win32_Processor|Select -First 1;$co=$c.NumberOfCores;$th=$c.NumberOfLogicalProcessors;$l2=if($c.L2CacheSize-gt0){$c.L2CacheSize}else{1024};$l3=if($c.L3CacheSize-gt0){$c.L3CacheSize}else{8192};$mh=$c.MaxClockSpeed;$bp=if($mh-ge3500){40}elseif($mh-ge2500){60}else{80};$ti=if($mh-ge3500){10}elseif($mh-ge2500){15}else{20};$it=if($co-ge16){70}elseif($co-ge8){60}else{50};$wc=[Math]::Max(4,[Math]::Min(32,$co));$wd=[Math]::Max(4,[Math]::Min(16,[Math]::Floor($co/2)));$dhi=if($co-ge16){8192}elseif($co-ge8){4096}else{2048};$dhni=[Math]::Floor($dhi/2);$mwi=[Math]::Max(4096,$th*256);$mrt=[Math]::Max(16,[Math]::Min(64,$co*2));Write-Host ($co,$th,$l2,$l3,$mh,$bp,$ti,$it,$wc,$wd,$dhi,$dhni,$mwi,$mrt -join '|')" > "%CPU_OUT%" 2>nul
+
+if exist "%CPU_OUT%" (
+    for /f "usebackq tokens=1-14 delims=|" %%A in ("%CPU_OUT%") do (
+        set "CPU_CORES=%%A"
+        set "CPU_THREADS=%%B"
+        set "CPU_L2=%%C"
+        set "CPU_L3=%%D"
+        set "CPU_MHZ=%%E"
+        set "CPU_BOOST=%%F"
+        set "CPU_TIMER=%%G"
+        set "CPU_INC_TH=%%H"
+        set "CPU_WORKERS_C=%%I"
+        set "CPU_WORKERS_D=%%J"
+        set "CPU_DHEAP_I=%%K"
+        set "CPU_DHEAP_NI=%%L"
+        set "CPU_MAXWORK=%%M"
+        set "CPU_MAXREQ=%%N"
+    )
+    del /f /q "%CPU_OUT%" >nul 2>&1
 )
 echo.
 echo   =========================================
@@ -1190,9 +1199,13 @@ echo   CPU Auto-Detect: !CPU_NAME! (!CPU_CORES!C/!CPU_THREADS!T, !CPU_MHZ!MHz, L
 
 :: Ultimate Performance power plan (hidden plan with zero power-saving, max CPU/disk/USB speed)
 powercfg /duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61 >nul 2>&1
-for /f "tokens=4" %%G in ('powercfg /list 2^>nul ^| findstr /i "Ultimate"') do powercfg /setactive %%G >nul 2>&1
+set "_ULTIMATE_SET=0"
+for /f "tokens=4" %%G in ('powercfg /list 2^>nul ^| findstr /i "Ultimate"') do (
+    powercfg /setactive %%G >nul 2>&1
+    set "_ULTIMATE_SET=1"
+)
 :: Fallback to High Performance if Ultimate not available
-powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c >nul 2>&1
+if "!_ULTIMATE_SET!"=="0" powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c >nul 2>&1
 :: Force all power settings to maximum performance (no idle, no throttle)
 powercfg /change monitor-timeout-ac 0
 powercfg /change standby-timeout-ac 0
@@ -1390,7 +1403,7 @@ echo   - VBS/Core Isolation disabled, Spectre/Meltdown mitigations removed
 :: Disable dynamic tick (stops power-saving CPU ticks, reduces DPC latency in VMs)
 bcdedit /set disabledynamictick yes >nul 2>&1
 :: Disable synthetic timers (improves micro-stutter in virtualized environments)
-bcdedit /deletevalue useplatformclock >nul 2>&1
+if "!CPU_IS_XEON!"=="0" bcdedit /deletevalue useplatformclock >nul 2>&1
 :: Remove boot menu timeout and boot animation to boot instantly
 bcdedit /timeout 0 >nul 2>&1
 bcdedit /set {globalsettings} custom:16000067 true >nul 2>&1
@@ -1407,8 +1420,12 @@ echo   - Enabling Memory Compression...
 
 :: Process Scheduling Priority (Set to 24: Optimize for Background Services)
 :: This gives equal, long CPU timeslices to all running bots/apps, maximizing throughput instead of just the active window
-reg add "HKLM\SYSTEM\CurrentControlSet\Control\PriorityControl" /v Win32PrioritySeparation /t REG_DWORD /d 24 /f >nul
-echo   - Background throughput priority boosted
+if "!CPU_IS_XEON!"=="0" (
+    reg add "HKLM\SYSTEM\CurrentControlSet\Control\PriorityControl" /v Win32PrioritySeparation /t REG_DWORD /d 24 /f >nul
+    echo   - Background throughput priority boosted (Short Variable Equal)
+) else (
+    echo   - Background throughput priority kept from XEON config
+)
 
 :: Disable Power Throttling (Prevents Windows from slowing down background/minimized tools)
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling" /v PowerThrottlingOff /t REG_DWORD /d 1 /f >nul
@@ -1565,6 +1582,8 @@ echo   - Background UWP processes killed
 echo   - Compiling Native C# RAM Trimmer...
 if not exist "%ProgramData%\PCL" mkdir "%ProgramData%\PCL" >nul 2>&1
 set "CS_FILE=%TEMP%\trim_ram.cs"
+
+setlocal DisableDelayedExpansion
 echo using System; > "%CS_FILE%"
 echo using System.Diagnostics; >> "%CS_FILE%"
 echo using System.Runtime.InteropServices; >> "%CS_FILE%"
@@ -1631,7 +1650,7 @@ echo                     numaMasks[i] = mask; >> "%CS_FILE%"
 echo                 } >> "%CS_FILE%"
 echo             } >> "%CS_FILE%"
 echo         } >> "%CS_FILE%"
-echo         string skipPattern = @"^(svchost|System|Idle|csrss|smss|lsass|explorer|wininit|winlogon|services|dwm|fontdrvhost|Memory Compression|Registry|MsMpEng|NisSrv|SecurityHealth|spoolsv|WmiPrvSE)$"; >> "%CS_FILE%"
+echo         string skipPattern = @"^(svchost^|System^|Idle^|csrss^|smss^|lsass^|explorer^|wininit^|winlogon^|services^|dwm^|fontdrvhost^|Memory Compression^|Registry^|MsMpEng^|NisSrv^|SecurityHealth^|spoolsv^|WmiPrvSE)$"; >> "%CS_FILE%"
 echo         Regex regex = new Regex(skipPattern, RegexOptions.IgnoreCase); >> "%CS_FILE%"
 echo         Process[] processes = Process.GetProcesses(); >> "%CS_FILE%"
 echo         int ldplayerCount = 0; >> "%CS_FILE%"
@@ -1660,7 +1679,9 @@ echo             } catch {} >> "%CS_FILE%"
 echo         } >> "%CS_FILE%"
 echo     } >> "%CS_FILE%"
 echo } >> "%CS_FILE%"
-%SystemRoot%\Microsoft.NET\Framework64\v4.0.30319\csc.exe /target:exe /out:"%ProgramData%\PCL\trim_ram.exe" /optimize "%CS_FILE%" >nul 2>&1
+endlocal
+
+%SystemRoot%\Microsoft.NET\Framework64\v4.0.30319\csc.exe /target:exe /out:"%ProgramData%\PCL\trim_ram.exe" /optimize "%CS_FILE%" >> "%LOG%" 2>&1
 del /f /q "%CS_FILE%" >nul 2>&1
 if exist "%ProgramData%\PCL\trim_ram.exe" (
     echo   - Native C# RAM Trimmer compiled successfully
@@ -1694,7 +1715,7 @@ echo     powershell -NoProfile -Command "$ErrorActionPreference='SilentlyContinu
 echo ) >> "%KILL_SCRIPT%"
 echo goto :loop >> "%KILL_SCRIPT%"
 schtasks /Delete /TN "KillBloat" /F >nul 2>&1
-schtasks /Create /TN "KillBloat" /SC ONLOGON /TR "cmd /c start /min \"%KILL_SCRIPT%\"" /RL HIGHEST /F >nul 2>&1
+schtasks /Create /TN "KillBloat" /SC ONLOGON /TR "cmd /c start /min \"\" \"%KILL_SCRIPT%\"" /RL HIGHEST /F >nul 2>&1
 echo   - Auto-kill bloat LOOP scheduled at logon (kills + trims every 60s)
 
 echo   EXTREME RAM saving tweaks applied.
@@ -1762,9 +1783,13 @@ reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\AppCompat" /v SbEnable /t REG_
 echo   - Application Compatibility Engine fully disabled
 
 :: Reduce SMB credits for lower memory (farm VMs don't do heavy file sharing)
-reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" /v MaxMpxCt /t REG_DWORD /d 50 /f >nul
-reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" /v MaxCmds /t REG_DWORD /d 50 /f >nul
-echo   - SMB credits minimized
+if "!CPU_IS_XEON!"=="0" (
+    reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" /v MaxMpxCt /t REG_DWORD /d 50 /f >nul
+    reg add "HKLM\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" /v MaxCmds /t REG_DWORD /d 50 /f >nul
+    echo   - SMB credits minimized
+) else (
+    echo   - SMB credits kept from XEON config (800)
+)
 
 :: ---- MULTI-VM / LDPLAYER FARM OPTIMIZATION (20-50+ instances) ----
 
@@ -1957,8 +1982,15 @@ echo   - Install scripts cleanup deferred to RunAll.bat
 :: ---- AGGRESSIVE DISK RECLAIM ----
 
 :: Remove Windows component backup (saves 200-500MB, prevents feature restore but who cares on farm)
-dism /Online /Cleanup-Image /StartComponentCleanup /ResetBase >nul 2>&1
-echo   - Component store final cleanup
+echo   - Temporarily enabling Windows Update service for DISM...
+sc config wuauserv start= demand >> "%LOG%" 2>&1
+net start wuauserv >> "%LOG%" 2>&1
+echo   - Running Component Store Cleanup (showing progress)...
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "dism /Online /Cleanup-Image /StartComponentCleanup /ResetBase 2>&1 | Tee-Object -FilePath '%LOG%' -Append"
+echo   - Restoring Windows Update service status...
+net stop wuauserv >> "%LOG%" 2>&1
+sc config wuauserv start= disabled >> "%LOG%" 2>&1
+echo   - Component store final cleanup completed
 
 :: Remove WinSxS pending deletes
 if exist "%SystemRoot%\WinSxS\Temp\PendingDeletes" (
@@ -1985,30 +2017,15 @@ echo   - WER archives purged
 if exist "%SystemRoot%\SoftwareDistribution" rmdir /s /q "%SystemRoot%\SoftwareDistribution" >nul 2>&1
 echo   - SoftwareDistribution purged
 
-:: Defrag SSD TRIM or HDD defrag
-%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "$d=Get-PhysicalDisk|Select-Object -First 1;if($d.MediaType -eq 'SSD'){Optimize-Volume -DriveLetter C -ReTrim -ErrorAction SilentlyContinue}else{Optimize-Volume -DriveLetter C -Defrag -ErrorAction SilentlyContinue}" >nul 2>&1
-echo   - Drive optimized (TRIM/Defrag)
+:: Optimize drive (showing progress, TRIM for SSD / Defrag for HDD)
+echo   - Optimizing drive C: (please wait)...
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "defrag C: /O 2>&1 | Tee-Object -FilePath '%LOG%' -Append"
+echo   - Drive optimization completed
 
-:: Force process all idle/pending tasks NOW
-rundll32.exe advapi32.dll,ProcessIdleTasks >nul 2>&1
-echo   - Idle tasks flushed
-
-:: ---- CREATE MANUAL RAM RECLAIM SHORTCUT ----
-:: Useful shortcut to manually flush RAM when needed
-set "RECLAIM=%PCL_DIR%\reclaim_ram.bat"
-(
-echo @echo off > "%RECLAIM%"
-echo echo Reclaiming RAM... >> "%RECLAIM%"
-echo if exist "%ProgramData%\PCL\trim_ram.exe" ( >> "%RECLAIM%"
-echo     "%ProgramData%\PCL\trim_ram.exe" ^>nul 2^>^&1 >> "%RECLAIM%"
-echo ) else ( >> "%RECLAIM%"
-echo     %%SystemRoot%%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "$ErrorActionPreference='SilentlyContinue';$c='using System;using System.Runtime.InteropServices;public class WS{[DllImport(''kernel32.dll'')]public static extern bool SetProcessWorkingSetSize(IntPtr h,IntPtr min,IntPtr max);}';Add-Type $c -EA SilentlyContinue;Get-Process | Where-Object {$_.ProcessName -notmatch 'LDPlayer|dnplayer|LdVBoxHeadless|svchost|System|Idle|csrss|smss|lsass|explorer|wininit|winlogon|services|dwm|fontdrvhost|Memory Compression|Registry|MsMpEng|NisSrv|SecurityHealth|spoolsv|WmiPrvSE'} | ForEach-Object { try{$h=$_.Handle;if($h){[void][WS]::SetProcessWorkingSetSize($h,[IntPtr]::new(-1),[IntPtr]::new(-1))}}catch{} }" >> "%RECLAIM%"
-echo ) >> "%RECLAIM%"
-echo rundll32.exe advapi32.dll,ProcessIdleTasks >> "%RECLAIM%"
-echo echo Done. RAM reclaimed. >> "%RECLAIM%"
-echo timeout /t 3 >> "%RECLAIM%"
-%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "$desktop=[Environment]::GetFolderPath('CommonDesktopDirectory');$s=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $desktop 'Reclaim RAM.lnk'));$s.TargetPath='cmd.exe';$s.Arguments='/c ""%RECLAIM%""';$s.IconLocation='%SystemRoot%\System32\shell32.dll,80';$s.WindowStyle=7;$s.Save()" >nul 2>&1
-echo   - Reclaim RAM shortcut created on Desktop
+:: Force process all idle/pending tasks in the BACKGROUND (prevents blocking first logon script)
+echo   - Launching idle tasks flush in background...
+start "" rundll32.exe advapi32.dll,ProcessIdleTasks
+echo   - Idle tasks flush scheduled
 
 :: ---- SHOW DISK SAVINGS ----
 for /f "tokens=3" %%S in ('dir C:\ 2^>nul ^| findstr /i "bytes free"') do set "FREE_SPACE=%%S"

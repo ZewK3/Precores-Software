@@ -68,7 +68,7 @@ foreach ($nm in $allNames) {
         if ($seenIds.ContainsKey($id)) { continue }
 
         $dist = [Math]::Abs($im.Index - $namePos)
-        if ($dist -lt $bestDist -and $dist -lt 300) {
+        if ($dist -lt $bestDist -and $dist -lt 1000) {
             $bestDist = $dist
             $bestId = $id
         }
@@ -126,22 +126,62 @@ foreach ($f in $files) {
     Write-Host "  [DL] $($f.Name)..." -NoNewline
 
     try {
-        # Step A: Hit the download URL to get session cookies + confirm token
+        # Step A: Hit the download URL to get session cookies, confirm token, and uuid (with retries)
         $session = $null
         $confirmToken = 't'
-        try {
-            $r = Invoke-WebRequest -Uri "https://drive.google.com/uc?export=download&id=$($f.Id)" `
-                -SessionVariable session -UseBasicParsing -UserAgent $ua -ErrorAction Stop
-            if ($r.Content -match 'confirm=([0-9A-Za-z_-]+)') {
-                $confirmToken = $Matches[1]
+        $uuid = ''
+        $stepAConnected = $false
+        $retryCountA = 0
+        $maxRetriesA = 3
+        while (-not $stepAConnected -and $retryCountA -lt $maxRetriesA) {
+            try {
+                $retryCountA++
+                $r = Invoke-WebRequest -Uri "https://drive.google.com/uc?export=download&id=$($f.Id)" `
+                    -SessionVariable session -UseBasicParsing -UserAgent $ua -ErrorAction Stop
+                if ($r.Content -match 'name="uuid"\s+value="([^"]+)"') {
+                    $uuid = $Matches[1]
+                }
+                if ($r.Content -match 'name="confirm"\s+value="([^"]+)"') {
+                    $confirmToken = $Matches[1]
+                } elseif ($r.Content -match 'confirm=([0-9A-Za-z_-]+)') {
+                    $confirmToken = $Matches[1]
+                }
+                $stepAConnected = $true
+            } catch {
+                if ($retryCountA -eq $maxRetriesA) {
+                    $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+                } else {
+                    Start-Sleep -Seconds 2
+                }
             }
-        } catch {
-            $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
         }
 
-        # Step B: Download with confirm token + session cookies
-        $dlUrl = "https://drive.google.com/uc?export=download&confirm=$confirmToken&id=$($f.Id)"
-        Invoke-WebRequest -Uri $dlUrl -OutFile $outPath -WebSession $session -UseBasicParsing -UserAgent $ua -ErrorAction Stop
+        # Step B: Download with confirm token, uuid, and session cookies (with retries)
+        if ($uuid) {
+            $dlUrl = "https://drive.usercontent.google.com/download?id=$($f.Id)&export=download&confirm=$confirmToken&uuid=$uuid"
+        } else {
+            $dlUrl = "https://drive.google.com/uc?export=download&confirm=$confirmToken&id=$($f.Id)"
+        }
+
+        $maxRetriesB = 3
+        $retryCountB = 0
+        $downloadSuccess = $false
+
+        while (-not $downloadSuccess -and $retryCountB -lt $maxRetriesB) {
+            try {
+                $retryCountB++
+                if ($retryCountB -gt 1) {
+                    Write-Host " (Retry $retryCountB/$maxRetriesB)..." -NoNewline
+                    Start-Sleep -Seconds 3
+                }
+                Invoke-WebRequest -Uri $dlUrl -OutFile $outPath -WebSession $session -UseBasicParsing -UserAgent $ua -ErrorAction Stop
+                $downloadSuccess = $true
+            } catch {
+                if ($retryCountB -eq $maxRetriesB) {
+                    throw $_
+                }
+            }
+        }
 
         # Step C: Validate the downloaded file is not an HTML error page
         if (Test-Path $outPath) {

@@ -8,11 +8,11 @@
 title QuickInstall - LDPlayer Farm Setup
 color 0B
 setlocal EnableExtensions EnableDelayedExpansion
+cd /d "%SystemRoot%"
 
-:: ---- Log setup (hidden directory) ----
+:: ---- Log setup ----
 set "LOG_DIR=%SystemRoot%\Logs\PCL"
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%" >nul 2>&1
-attrib +h +s "%LOG_DIR%" >nul 2>&1
 
 set "LOG=%LOG_DIR%\QuickInstall_Log.txt"
 echo ============================================================ > "%LOG%"
@@ -83,6 +83,31 @@ set "TOTAL_SKIP=0"
 
 echo ---- Starting installations ---- >> "%LOG%"
 echo ---- Starting installations ----
+echo.
+
+:: ---- Check Internet Connection (wait up to 60 seconds) ----
+echo [*] Checking internet connectivity...
+echo [*] Checking internet connectivity... >> "%LOG%"
+set "INTERNET_OK=0"
+for /l %%I in (1,1,12) do (
+    ping -n 1 8.8.8.8 >nul 2>&1
+    if !errorlevel! equ 0 (
+        set "INTERNET_OK=1"
+        goto :internet_connected
+    )
+    echo      Offline, waiting for network connection... (Attempt %%I/12)
+    echo      Offline, waiting for network connection... (Attempt %%I/12) >> "%LOG%"
+    timeout /t 5 /nobreak >nul
+)
+
+:internet_connected
+if "%INTERNET_OK%"=="0" (
+    echo [WARN] No internet connection detected! Downloading software files may fail.
+    echo [WARN] No internet connection detected! >> "%LOG%"
+) else (
+    echo [OK] Internet connection is active.
+    echo [OK] Internet connection is active. >> "%LOG%"
+)
 echo.
 
 :: --- 1. Chrome ---
@@ -400,7 +425,7 @@ echo [8/8] Downloading Software from Google Drive folder...
 echo [8/8] Downloading Software folder from Google Drive... >> "%LOG%"
 set "GDRIVE_SCRIPT=C:\InstallScripts\gdrive_folder_dl.ps1"
 if exist "%GDRIVE_SCRIPT%" (
-    %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%GDRIVE_SCRIPT%" "%GDRIVE_FOLDER_ID%" "%SOFTWARE_DIR%"
+    %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '%GDRIVE_SCRIPT%' '%GDRIVE_FOLDER_ID%' '%SOFTWARE_DIR%' 2>&1 | Tee-Object -FilePath '%LOG%' -Append"
     if !errorlevel! equ 0 (
         echo [8/8] Software folder: ALL OK >> "%LOG%"
         set /a TOTAL_OK+=1
@@ -427,6 +452,12 @@ set "ICO_DST=%PCL_TOOL_DIR%\precores-pc.ico"
 if exist "%PRECORE_SRC%" (
     if not exist "%PCL_TOOL_DIR%" mkdir "%PCL_TOOL_DIR%" >nul 2>&1
     copy /y "%PRECORE_SRC%" "%PRECORE_DST%" >nul 2>&1
+    attrib +h +s "%PCL_TOOL_DIR%" >nul 2>&1
+    :: Lock PreCores PC console to 72x34 and remove buffer scrolling
+    reg add "HKCU\Console\PreCores PC - Maintenance Suite" /v WindowSize /t REG_DWORD /d 0x00220048 /f >nul 2>&1
+    reg add "HKCU\Console\PreCores PC - Maintenance Suite" /v ScreenBufferSize /t REG_DWORD /d 0x00220048 /f >nul 2>&1
+    reg add "HKCU\Console\PreCores PC - Maintenance Suite" /v QuickEdit /t REG_DWORD /d 0 /f >nul 2>&1
+    reg add "HKCU\Console\PreCores PC - Maintenance Suite" /v InsertMode /t REG_DWORD /d 0 /f >nul 2>&1
     :: Convert avt.png to .ico for shortcut icon
     if exist "%AVT_SRC%" (
         %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
@@ -437,7 +468,7 @@ if exist "%PRECORE_SRC%" (
         "$desktop=[Environment]::GetFolderPath('CommonDesktopDirectory');" ^
         "$s=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $desktop 'PreCores PC.lnk'));" ^
         "$s.TargetPath='cmd.exe';" ^
-        "$s.Arguments='/c \"\"%PRECORE_DST%\"\"';" ^
+        "$s.Arguments='/k \"\"%PRECORE_DST%\"\"';" ^
         "$s.WorkingDirectory='%PCL_TOOL_DIR%';" ^
         "if(Test-Path '%ICO_DST%'){$s.IconLocation='%ICO_DST%,0'}else{$s.IconLocation='%SystemRoot%\System32\shell32.dll,21'};" ^
         "$s.Description='PreCores PC - System Maintenance';" ^
@@ -512,7 +543,7 @@ if "!_FOUND!"=="1" (
 echo [!_STEP!] Installing !_NAME!...
 echo [!_STEP!] Downloading !_NAME!... >> "%LOG%"
 
-%PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '!_URL!' -OutFile '%DL_DIR%\!_FILE!' -UseBasicParsing"
+%PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '!_URL!' -OutFile '%DL_DIR%\!_FILE!' -UseBasicParsing" >> "%LOG%" 2>&1
 
 if not exist "%DL_DIR%\!_FILE!" (
     echo        ERROR: download failed.
@@ -524,7 +555,7 @@ if not exist "%DL_DIR%\!_FILE!" (
 echo [!_STEP!] Installing !_NAME!... >> "%LOG%"
 
 if "!_TYPE!"=="msi" (
-    msiexec /i "%DL_DIR%\!_FILE!" /qn /norestart
+    msiexec /i "%DL_DIR%\!_FILE!" /qn /norestart /L*V "%LOG_DIR%\Install_!_FILE!.log"
 ) else if "!_TYPE!"=="nsis" (
     start /wait "" "%DL_DIR%\!_FILE!" /S
 )
@@ -552,18 +583,26 @@ set "SEVENZIP="
 if exist "%ProgramFiles%\7-Zip\7z.exe" set "SEVENZIP=%ProgramFiles%\7-Zip\7z.exe"
 if exist "%ProgramFiles(x86)%\7-Zip\7z.exe" set "SEVENZIP=%ProgramFiles(x86)%\7-Zip\7z.exe"
 
+if exist "C:\QuickOptimize_Log.txt" copy /y "C:\QuickOptimize_Log.txt" "%LOG_DIR%\" >nul 2>&1
+
 if defined SEVENZIP (
     echo [*] Archiving logs with password protection...
     echo [*] Archiving logs... >> "%LOG%"
-    if exist "C:\QuickOptimize_Log.txt" move /y "C:\QuickOptimize_Log.txt" "%LOG_DIR%\" >nul 2>&1
-    attrib +h +s "%LOG_DIR%" >nul 2>&1
     "!SEVENZIP!" a -t7z "%LOG_DIR%\PCL_Logs.7z" "%LOG_DIR%\*.txt" -pPCL@1231233 -mhe=on -mx=1 -y >nul 2>&1
     if !errorlevel! equ 0 (
-        del /f /q "%LOG_DIR%\*.txt" >nul 2>&1
         echo [*] Logs archived to %LOG_DIR%\PCL_Logs.7z >> "%LOG_DIR%\status.txt"
     )
 ) else (
     echo [*] 7-Zip not found, logs kept as plain text in %LOG_DIR%
     echo [*] 7-Zip not found, logs kept as plain text >> "%LOG%"
 )
+
+:: Copy logs to a visible folder on Desktop for easy debugging
+set "PUBLIC_LOG_DIR=%PUBLIC%\Desktop\Installation_Logs"
+if not exist "%PUBLIC_LOG_DIR%" mkdir "%PUBLIC_LOG_DIR%" >nul 2>&1
+if exist "C:\QuickOptimize_Log.txt" copy /y "C:\QuickOptimize_Log.txt" "%PUBLIC_LOG_DIR%\" >nul 2>&1
+if exist "%LOG_DIR%\QuickInstall_Log.txt" copy /y "%LOG_DIR%\QuickInstall_Log.txt" "%PUBLIC_LOG_DIR%\" >nul 2>&1
+if exist "%LOG_DIR%\Install_*.log" copy /y "%LOG_DIR%\Install_*.log" "%PUBLIC_LOG_DIR%\" >nul 2>&1
+echo [*] Plain text logs copied to desktop folder: %PUBLIC_LOG_DIR%
+echo [*] Plain text logs copied to desktop folder: %PUBLIC_LOG_DIR% >> "%LOG%"
 exit /b 0

@@ -13,7 +13,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 set "SCRIPTS_DIR=%~dp0"
 if "%SCRIPTS_DIR:~-1%"=="\" set "SCRIPTS_DIR=%SCRIPTS_DIR:~0,-1%"
 for %%I in ("%SCRIPTS_DIR%\..") do set "BASE_DIR=%%~fI"
-set "ISO_SRC=%BASE_DIR%\tiny10 x64 beta 2.iso"
+set "ISO_SRC=%BASE_DIR%\tiny10 x64 23h.iso"
 set "ISO_FILES=%BASE_DIR%\ISO_FILES"
 set "OUTPUT_ISO=%BASE_DIR%\tiny10_optimized_ldplayer.iso"
 set "OSCDIMG=C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\amd64\Oscdimg\oscdimg.exe"
@@ -84,7 +84,7 @@ timeout /t 3 /nobreak >nul
 
 :: Find the mounted ISO drive letter
 set "ISO_DRIVE="
-for %%D in (D E F G H I J K L) do (
+for %%D in (D E F G H I J K L M N O P Q R S T U V W X Y Z) do (
     if exist "%%D:\sources\boot.wim" if not defined ISO_DRIVE (
         set "ISO_DRIVE=%%D"
     )
@@ -209,8 +209,8 @@ echo ============================================================
 echo  PHASE 3/3: Build ISO
 echo ============================================================
 
-:: Remove read-only attributes
-attrib -r "%ISO_FILES%\*" /s /d >nul 2>&1
+:: Remove read-only, hidden, and system attributes
+attrib -r -h -s "%ISO_FILES%\*" /s /d >nul 2>&1
 
 set "BIOS_BOOT=%ISO_FILES%\boot\etfsboot.com"
 set "UEFI_BOOT=%ISO_FILES%\efi\microsoft\boot\efisys_noprompt.bin"
@@ -226,12 +226,12 @@ if not exist "!BIOS_BOOT!" (
 if not exist "!UEFI_BOOT!" goto :bios_only
 
 echo [*] Building dual-boot ISO (BIOS + UEFI)...
-"!OSCDIMG!" -m -o -u2 -udfver102 -bootdata:2#p0,e,b"!BIOS_BOOT!"#pEF,e,b"!UEFI_BOOT!" "!ISO_FILES!" "!OUTPUT_ISO!"
+"!OSCDIMG!" -m -h -u2 -udfver102 -bootdata:2#p0,e,b"!BIOS_BOOT!"#pEF,e,b"!UEFI_BOOT!" "!ISO_FILES!" "!OUTPUT_ISO!"
 goto :check_iso
 
 :bios_only
 echo [*] Building BIOS-only ISO...
-"!OSCDIMG!" -m -o -u2 -udfver102 -b"!BIOS_BOOT!" "!ISO_FILES!" "!OUTPUT_ISO!"
+"!OSCDIMG!" -m -h -u2 -udfver102 -b"!BIOS_BOOT!" "!ISO_FILES!" "!OUTPUT_ISO!"
 
 :check_iso
 if !errorlevel! neq 0 (
