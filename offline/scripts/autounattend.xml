@@ -29,8 +29,8 @@
       <!-- Accept EULA automatically -->
       <UserData>
         <AcceptEula>true</AcceptEula>
-        <FullName>PCL</FullName>
-        <Organization>PCL</Organization>
+        <FullName>PRECORES</FullName>
+        <Organization>PRECORES</Organization>
       </UserData>
 
       <!-- DiskConfiguration removed: user selects disk manually -->
@@ -51,8 +51,8 @@
                xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
       <ComputerName>*</ComputerName>
       <TimeZone>SE Asia Standard Time</TimeZone>
-      <RegisteredOwner>PCL</RegisteredOwner>
-      <RegisteredOrganization>PCL</RegisteredOrganization>
+      <RegisteredOwner>PRECORES</RegisteredOwner>
+      <RegisteredOrganization>PRECORES</RegisteredOrganization>
     </component>
 
     <!-- Disable UAC for smoother setup -->

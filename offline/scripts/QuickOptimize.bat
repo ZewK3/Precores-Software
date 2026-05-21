@@ -1213,18 +1213,52 @@ powercfg /change hibernate-timeout-ac 0
 powercfg /change disk-timeout-ac 0
 echo   - Ultimate Performance power plan activated
 
-:: ---- CPU PERFORMANCE CAP: <=90%% (extend CPU lifespan, reduce heat/throttling) ----
-:: MAX CPU State = 90%%
-powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 bc5038f7-23e0-4960-96da-33abaf5935ec 90 >nul 2>&1
-powercfg /SETDCVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 bc5038f7-23e0-4960-96da-33abaf5935ec 90 >nul 2>&1
-:: MIN CPU State = 5%%
+:: ---- HYBRID CORES (P-CORE/E-CORE) & ACTIVE COOLING FOR TURBO BOOST ----
+:: Heterogeneous thread scheduling policy (P-Core/E-Core)
+powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 93b22b78-69f3-4e3f-9659-be99d941451d 2 >nul 2>&1
+powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 ba1a2862-34e4-407b-9c99-9233637e42e2 2 >nul 2>&1
+:: System cooling policy = Active
+powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 94d3a615-a899-4ac5-ae2b-e4d8f634367f 1 >nul 2>&1
+powercfg /SETDCVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 94d3a615-a899-4ac5-ae2b-e4d8f634367f 1 >nul 2>&1
+powercfg /SETACTIVE SCHEME_CURRENT >nul 2>&1
+echo   - Hybrid Core scheduling (P-Core priority) and Active Cooling policy enabled
+
+:: ---- CONFIGURE COMPUTER NAME TO PRECORES-xxxx ----
+echo   - Configuring Computer Name to PRECORES-xxxx...
+set "RAND_CHARS=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+set "RAND_SUFFIX="
+for /l %%i in (1,1,4) do (
+    set /a "rand_idx=!random! %% 36"
+    for %%j in (!rand_idx!) do set "RAND_SUFFIX=!RAND_SUFFIX!!RAND_CHARS:~%%j,1!"
+)
+set "NEW_NAME=PRECORES-!RAND_SUFFIX!"
+
+:: Try using WMI (most reliable in batch script)
+wmic computersystem where name="%computername%" call rename name="!NEW_NAME!" >nul 2>&1
+
+:: Try using PowerShell with ExecutionPolicy Bypass as secondary method
+%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Rename-Computer -NewName '!NEW_NAME!' -Force" >nul 2>&1
+
+:: Force write to Registry directly to ensure rename takes effect on next boot even if APIs failed
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\ComputerName\ComputerName" /v "ComputerName" /t REG_SZ /d "!NEW_NAME!" /f >nul 2>&1
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\ComputerName\ActiveComputerName" /v "ComputerName" /t REG_SZ /d "!NEW_NAME!" /f >nul 2>&1
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" /v "Hostname" /t REG_SZ /d "!NEW_NAME!" /f >nul 2>&1
+reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" /v "NV Hostname" /t REG_SZ /d "!NEW_NAME!" /f >nul 2>&1
+
+:: ---- UNLOCK CPU TURBO BOOST & MAX PERFORMANCE (100%% max CPU speed) ----
+:: MAX CPU State = 100%%
+powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 bc5038f7-23e0-4960-96da-33abaf5935ec 100 >nul 2>&1
+powercfg /SETDCVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 bc5038f7-23e0-4960-96da-33abaf5935ec 100 >nul 2>&1
+:: MIN CPU State = 5%% (allows CPU to downclock when idle to prevent overheating)
 powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 893dee8e-2bef-41e0-89c6-b55d0929964c 5 >nul 2>&1
 powercfg /SETDCVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 893dee8e-2bef-41e0-89c6-b55d0929964c 5 >nul 2>&1
 
-:: Boost Mode = 4 (Efficient Aggressive)
-powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 be337238-0d82-4146-a960-4f3749d470c7 4 >nul 2>&1
-:: Boost Policy = DYNAMIC (based on CPU clock: fast CPU=40%%, mid=60%%, slow=80%%)
-powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 45bcc044-d885-43e2-8605-ee0ec6e96b59 !CPU_BOOST! >nul 2>&1
+:: Boost Mode = 2 (Aggressive - force CPU Turbo Boost when needed)
+powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 be337238-0d82-4146-a960-4f3749d470c7 2 >nul 2>&1
+powercfg /SETDCVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 be337238-0d82-4146-a960-4f3749d470c7 2 >nul 2>&1
+:: Boost Policy = 0 (Maximum Performance - prioritize performance over energy savings)
+powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 45bcc044-d885-43e2-8605-ee0ec6e96b59 0 >nul 2>&1
+powercfg /SETDCVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 45bcc044-d885-43e2-8605-ee0ec6e96b59 0 >nul 2>&1
 
 :: ---- CORE PARKING (all cores active) ----
 powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 0cc5b647-c1df-4637-891a-dec35c318583 0 >nul 2>&1
@@ -1241,7 +1275,7 @@ powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 4d
 
 :: ---- APPLY ALL POWER CHANGES ----
 powercfg /SETACTIVE SCHEME_CURRENT >nul 2>&1
-echo   - CPU capped at 90%% max, boost=!CPU_BOOST!%%, threshold=!CPU_INC_TH!%%, timer=!CPU_TIMER!ms
+echo   - CPU Turbo Boost unlocked (100%% max, boost policy optimized, threshold=!CPU_INC_TH!%%, timer=!CPU_TIMER!ms)
 
 :: ---- MMCSS THREAD PRIORITIES ----
 reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" /v SystemResponsiveness /t REG_DWORD /d 10 /f >nul
@@ -1290,9 +1324,9 @@ powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 36
 echo   - Energy Performance Preference = Maximum Performance (EPP=0)
 
 :: ---- MAX PROCESSOR FREQUENCY: UNLIMITED ----
-:: Let boost work within 90%% cap, don't add another frequency limit
+:: Let boost work within 100%% cap, don't add another frequency limit
 powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 75b0ae3f-bce0-45a7-8c89-c9611c25e100 0 >nul 2>&1
-echo   - Max Processor Frequency = Unlimited (within 90%% cap)
+echo   - Max Processor Frequency = Unlimited (within 100%% cap)
 
 :: ---- APPLY XEON POWER CHANGES ----
 powercfg /SETACTIVE SCHEME_CURRENT >nul 2>&1
@@ -1412,17 +1446,22 @@ bcdedit /set {default} bootuxdisabled on >nul 2>&1
 :: NOTE: Firewall is disabled after VM registration setup (PHASE 10).
 echo   - Boot tweaks applied
 
-:: ---- MEMORY COMPRESSION TWEAKS ----
+:: ---- MEMORY COMPRESSION TWEAKS (Smart RAM Detection) ----
+:: Auto-detect system RAM size
+for /f "usebackq" %%M in (`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "[Math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1GB)"`) do set "SYSTEM_RAM_GB=%%M"
 
-:: Force ENABLE Memory Compression (effectively gives ~30-50% more usable RAM on any system)
-echo   - Enabling Memory Compression...
-%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "Enable-MMAgent -MemoryCompression;Enable-MMAgent -PageCombining;Disable-MMAgent -ApplicationLaunchPrefetching;Disable-MMAgent -ApplicationPreLaunch;Disable-MMAgent -OperationAPI" >nul 2>&1
+if !SYSTEM_RAM_GB! LSS 16 (
+    echo   - Enabling Memory Compression (Low RAM mode: !SYSTEM_RAM_GB!GB)...
+    %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "Enable-MMAgent -MemoryCompression;Enable-MMAgent -PageCombining;Disable-MMAgent -ApplicationLaunchPrefetching;Disable-MMAgent -ApplicationPreLaunch;Disable-MMAgent -OperationAPI" >nul 2>&1
+) else (
+    echo   - Disabling Memory Compression for low latency (High RAM mode: !SYSTEM_RAM_GB!GB)...
+    %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "Disable-MMAgent -MemoryCompression;Disable-MMAgent -PageCombining;Disable-MMAgent -ApplicationLaunchPrefetching;Disable-MMAgent -ApplicationPreLaunch;Disable-MMAgent -OperationAPI" >nul 2>&1
+)
 
-:: Process Scheduling Priority (Set to 24: Optimize for Background Services)
-:: This gives equal, long CPU timeslices to all running bots/apps, maximizing throughput instead of just the active window
+:: Process Scheduling Priority (Set to 38 for interactive host, 24 for Xeon farm)
 if "!CPU_IS_XEON!"=="0" (
-    reg add "HKLM\SYSTEM\CurrentControlSet\Control\PriorityControl" /v Win32PrioritySeparation /t REG_DWORD /d 24 /f >nul
-    echo   - Background throughput priority boosted (Short Variable Equal)
+    reg add "HKLM\SYSTEM\CurrentControlSet\Control\PriorityControl" /v Win32PrioritySeparation /t REG_DWORD /d 38 /f >nul
+    echo   - Foreground interactive application priority boosted (Short Variable High)
 ) else (
     echo   - Background throughput priority kept from XEON config
 )
@@ -1449,6 +1488,11 @@ fsutil behavior set memoryusage 2 >nul 2>&1
 :: Disable NTFS encryption overhead (EFS not needed on farming VMs)
 fsutil behavior set disableencryption 1 >nul 2>&1
 echo   - NTFS tuned (8.3 off, last-access off, encryption off, memory level 2)
+
+:: Tăng dự phòng không gian MFT cho NTFS để giảm phân mảnh trên SSD
+fsutil behavior set mftzone 2 >nul 2>&1
+:: Giảm overhead chẩn đoán đồ họa DirectX
+reg add "HKLM\SOFTWARE\Microsoft\DirectX" /v UserRefreshRate /t REG_DWORD /d 0 /f >nul
 
 :: Enable Hardware-Accelerated GPU Scheduling (HAGS) for LDPlayer performance
 :: (HwSchMode already set to 2 in Phase 5)
@@ -1541,12 +1585,15 @@ echo   - Font smoothing kept ON (themes preserved)
 %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;[StructLayout(LayoutKind.Sequential)]public struct DEVMODE{[MarshalAs(UnmanagedType.ByValTStr,SizeConst=32)]public string dmDeviceName;public short dmSpecVersion;public short dmDriverVersion;public short dmSize;public short dmDriverExtra;public int dmFields;public int dmPositionX;public int dmPositionY;public int dmDisplayOrientation;public int dmDisplayFixedOutput;public short dmColor;public short dmDuplex;public short dmYResolution;public short dmTTOption;public short dmCollate;[MarshalAs(UnmanagedType.ByValTStr,SizeConst=32)]public string dmFormName;public short dmLogPixels;public int dmBitsPerPel;public int dmPelsWidth;public int dmPelsHeight;public int dmDisplayFlags;public int dmDisplayFrequency;public int dmICMMethod;public int dmICMIntent;public int dmMediaType;public int dmDitherType;public int dmReserved1;public int dmReserved2;public int dmPanningWidth;public int dmPanningHeight;}public class PInvoke{[DllImport(\"user32.dll\")]public static extern int ChangeDisplaySettings(ref DEVMODE devMode,int flags);public static void SetRes(int w,int h){DEVMODE dm=new DEVMODE();dm.dmSize=(short)Marshal.SizeOf(typeof(DEVMODE));dm.dmPelsWidth=w;dm.dmPelsHeight=h;dm.dmFields=0x80000|0x100000;ChangeDisplaySettings(ref dm,0);}}' -Language CSharp;[PInvoke]::SetRes(1024,768)" >nul 2>&1
 echo   - Resolution set to 1024x768 (saves VRAM)
 
-:: ---- GPU THREAD PRIORITY (prioritize LDPlayer GPU rendering) ----
+:: ---- GPU THREAD PRIORITY (prioritize Games and Emulator rendering) ----
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games" /v "Affinity" /t REG_DWORD /d 0 /f >nul
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games" /v "Background Only" /t REG_SZ /d "False" /f >nul
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games" /v "Clock Rate" /t REG_DWORD /d 10000 /f >nul
 reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games" /v "GPU Priority" /t REG_DWORD /d 8 /f >nul
 reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games" /v "Priority" /t REG_DWORD /d 6 /f >nul
 reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games" /v "Scheduling Category" /t REG_SZ /d "High" /f >nul
 reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games" /v "SFIO Priority" /t REG_SZ /d "High" /f >nul
-echo   - GPU thread priority set to HIGH for emulators
+echo   - Games and Emulator thread priority set to HIGH (MMCSS tuned)
 
 :: ---- USB SELECTIVE SUSPEND OFF (prevents ADB disconnects) ----
 powercfg /SETACVALUEINDEX SCHEME_CURRENT 2a737441-1930-4402-8d77-b2bebba308a3 48e6b7a6-50f5-4782-a5d4-53bb8f07e226 0 >nul 2>&1
@@ -1603,6 +1650,23 @@ echo     [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Auto)
 echo     public static extern bool LookupPrivilegeValue(string lpSystemName, string lpName, out LUID lpLuid); >> "%CS_FILE%"
 echo     [DllImport("advapi32.dll", SetLastError = true)] >> "%CS_FILE%"
 echo     public static extern bool AdjustTokenPrivileges(IntPtr tokenHandle, bool disableAllPrivileges, ref TOKEN_PRIVILEGES newState, int bufferLength, IntPtr previousState, IntPtr returnLength); >> "%CS_FILE%"
+echo     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)] >> "%CS_FILE%"
+echo     public class MEMORYSTATUSEX { >> "%CS_FILE%"
+echo         public uint dwLength; >> "%CS_FILE%"
+echo         public uint dwMemoryLoad; >> "%CS_FILE%"
+echo         public ulong ullTotalPhys; >> "%CS_FILE%"
+echo         public ulong ullAvailPhys; >> "%CS_FILE%"
+echo         public ulong ullTotalPageFile; >> "%CS_FILE%"
+echo         public ulong ullAvailPageFile; >> "%CS_FILE%"
+echo         public ulong ullTotalVirtual; >> "%CS_FILE%"
+echo         public ulong ullAvailVirtual; >> "%CS_FILE%"
+echo         public ulong ullAvailExtendedVirtual; >> "%CS_FILE%"
+echo         public MEMORYSTATUSEX() { >> "%CS_FILE%"
+echo             this.dwLength = (uint)Marshal.SizeOf(typeof(MEMORYSTATUSEX)); >> "%CS_FILE%"
+echo         } >> "%CS_FILE%"
+echo     } >> "%CS_FILE%"
+echo     [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)] >> "%CS_FILE%"
+echo     public static extern bool GlobalMemoryStatusEx([In, Out] MEMORYSTATUSEX lpBuffer); >> "%CS_FILE%"
 echo     [StructLayout(LayoutKind.Sequential)] >> "%CS_FILE%"
 echo     public struct LUID { >> "%CS_FILE%"
 echo         public uint LowPart; >> "%CS_FILE%"
@@ -1639,6 +1703,13 @@ echo             Marshal.WriteInt32(pCommand, purgeCommand); >> "%CS_FILE%"
 echo             NtSetSystemInformation(80, pCommand, sizeof(int)); >> "%CS_FILE%"
 echo             Marshal.FreeHGlobal(pCommand); >> "%CS_FILE%"
 echo         } catch {} >> "%CS_FILE%"
+echo         MEMORYSTATUSEX memStatus = new MEMORYSTATUSEX(); >> "%CS_FILE%"
+echo         if (GlobalMemoryStatusEx(memStatus)) { >> "%CS_FILE%"
+echo             double freePercent = (double)memStatus.ullAvailPhys / memStatus.ullTotalPhys * 100.0; >> "%CS_FILE%"
+echo             if (freePercent ^>= 15.0) { >> "%CS_FILE%"
+echo                 return; >> "%CS_FILE%"
+echo             } >> "%CS_FILE%"
+echo         } >> "%CS_FILE%"
 echo         uint highestNode = 0; >> "%CS_FILE%"
 echo         ulong[] numaMasks = null; >> "%CS_FILE%"
 echo         if (GetNumaHighestNodeNumber(out highestNode) ^&^& highestNode ^> 0) { >> "%CS_FILE%"
@@ -1693,7 +1764,7 @@ if exist "%ProgramData%\PCL\trim_ram.exe" (
 set "KILL_SCRIPT=%PCL_DIR%\kill_bloat.bat"
 echo @echo off > "%KILL_SCRIPT%"
 echo :loop >> "%KILL_SCRIPT%"
-echo timeout /t 60 /nobreak ^>nul >> "%KILL_SCRIPT%"
+echo timeout /t 120 /nobreak ^>nul >> "%KILL_SCRIPT%"
 echo for %%%%P in ( >> "%KILL_SCRIPT%"
 echo     SearchApp.exe SearchUI.exe RuntimeBroker.exe >> "%KILL_SCRIPT%"
 echo     ShellExperienceHost.exe StartMenuExperienceHost.exe >> "%KILL_SCRIPT%"
@@ -1757,10 +1828,10 @@ echo   - NTFS journal minimized (64MB -> 2MB)
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v SecondLevelDataCache /t REG_DWORD /d !CPU_L2! /f >nul
 echo   - SecondLevelDataCache set to actual !CPU_L2!KB (auto-detected)
 
-:: Expose Processor Boost settings in powercfg (required for Phase 9 boost mode = Efficient Aggressive)
+:: Expose Processor Boost settings in powercfg (required for Phase 9 boost mode = Aggressive)
 :: Attributes=2 makes the setting visible in Power Options GUI
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Power\PowerSettings\54533251-82be-4824-96c1-47b60b740d00\be337238-0d82-4146-a960-4f3749d470c7" /v Attributes /t REG_DWORD /d 2 /f >nul
-echo   - Processor boost settings exposed (Efficient Aggressive @ 90%% cap)
+echo   - Processor boost settings exposed (Aggressive @ 100%% max)
 
 :: Disable Connected Standby (Modern Standby = useless on VM farms)
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\Power" /v CsEnabled /t REG_DWORD /d 0 /f >nul

@@ -384,14 +384,16 @@ call :show_header "[3] Network Tools"
 echo   %G%[1]%N% Flush DNS only
 echo   %G%[2]%N% Renew IP + full Winsock/TCP reset
 echo   %G%[3]%N% Proxy settings (HTTP/SOCKS/WinHTTP)
+echo   %G%[4]%N% Optimize network adapters
 echo   %R%[Q]%N% Back
 echo.
 set "netchoice="
-set /p "netchoice=  %C%➤%N% Select %W%[1-3/Q]%N%: "
+set /p "netchoice=  %C%➤%N% Select %W%[1-4/Q]%N%: "
 if /i "!netchoice!"=="q" goto :main_menu
 if "!netchoice!"=="1" goto :flush_dns_only
 if "!netchoice!"=="2" goto :full_network_reset
 if "!netchoice!"=="3" goto :proxy_tools
+if "!netchoice!"=="4" goto :optimize_network_adapters
 goto :flush_dns
 
 :flush_dns_only
@@ -402,6 +404,18 @@ ipconfig /flushdns >nul 2>&1
 echo       %DG%Done.%N%
 echo.
 echo   %G%✓ DONE!%N% DNS cache flushed.
+echo.
+pause
+goto :flush_dns
+
+:optimize_network_adapters
+call :show_header "[3.4] Optimize Network Adapters"
+echo   %Y%Configuring network adapters for low latency / VMs...%N%
+powershell -NoProfile -Command "Get-NetAdapter | Set-NetAdapterAdvancedProperty -DisplayName 'Energy Efficient Ethernet' -DisplayValue 'Disabled' -ErrorAction SilentlyContinue"
+powershell -NoProfile -Command "Get-NetAdapter | Set-NetAdapterAdvancedProperty -DisplayName 'Green Ethernet' -DisplayValue 'Disabled' -ErrorAction SilentlyContinue"
+powershell -NoProfile -Command "Get-CimInstance Win32_NetworkAdapter | Where-Object { $_.PhysicalAdapter } | ForEach-Object { reg add ('HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}\' + $_.DeviceID.ToString().PadLeft(4,'0')) /v PnPCapabilities /t REG_DWORD /d 24 /f >nul 2>&1 }"
+echo.
+echo   %G%✓ DONE!%N% Network adapters optimized (Power Saving disabled).
 echo.
 pause
 goto :flush_dns
@@ -881,11 +895,13 @@ echo   %G%[4]%N% Fix common Windows issues
 echo   %G%[5]%N% Restart Explorer
 echo   %G%[6]%N% User profile manager
 echo   %G%[7]%N% System identity/name
-echo   %G%[8]%N% Open System Properties
+echo   %G%[8]%N% CPU settings (Turbo Boost)
+echo   %G%[9]%N% Windows Update Manager
+echo   %G%[A]%N% Open System Properties
 echo   %R%[Q]%N% Back
 echo.
 set "syschoice="
-set /p "syschoice=  %C%➤%N% Select %W%[1-8/Q]%N%: "
+set /p "syschoice=  %C%➤%N% Select %W%[1-9/A/Q]%N%: "
 if /i "!syschoice!"=="q" goto :main_menu
 if "!syschoice!"=="1" goto :sys_info
 if "!syschoice!"=="2" goto :startup_mgr
@@ -894,8 +910,86 @@ if "!syschoice!"=="4" goto :fix_issues
 if "!syschoice!"=="5" goto :restart_explorer
 if "!syschoice!"=="6" goto :profile_manager
 if "!syschoice!"=="7" goto :system_identity_tools
-if "!syschoice!"=="8" start "" SystemPropertiesAdvanced.exe
+if "!syschoice!"=="8" goto :cpu_settings_menu
+if "!syschoice!"=="9" goto :windows_update_manager
+if /i "!syschoice!"=="a" start "" SystemPropertiesAdvanced.exe
 goto :system_tools
+
+:cpu_settings_menu
+call :show_header "[4.8] CPU Settings (Turbo Boost)"
+echo   %G%[1]%N% Enable CPU Turbo Boost (Maximum Performance)
+echo   %G%[2]%N% Disable CPU Turbo Boost (Lower Temperature)
+echo   %G%[3]%N% Set Minimum CPU State to 5%% (Allows downclocking when idle)
+echo   %G%[4]%N% Set Minimum CPU State to 100%% (Constant high clock)
+echo   %R%[Q]%N% Back
+echo.
+set "cpuchoice="
+set /p "cpuchoice=  %C%➤%N% Select %W%[1-4/Q]%N%: "
+if /i "!cpuchoice!"=="q" goto :system_tools
+if "!cpuchoice!"=="1" (
+    powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 be337238-0d82-4146-a960-4f3749d470c7 2 >nul 2>&1
+    powercfg /SETACTIVE SCHEME_CURRENT >nul 2>&1
+    echo.
+    echo   %G%✓ DONE!%N% CPU Turbo Boost enabled (Aggressive).
+)
+if "!cpuchoice!"=="2" (
+    powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 be337238-0d82-4146-a960-4f3749d470c7 0 >nul 2>&1
+    powercfg /SETACTIVE SCHEME_CURRENT >nul 2>&1
+    echo.
+    echo   %G%✓ DONE!%N% CPU Turbo Boost disabled (Lower Temperature).
+)
+if "!cpuchoice!"=="3" (
+    powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 893dee8e-2bef-41e0-89c6-b55d0929964c 5 >nul 2>&1
+    powercfg /SETACTIVE SCHEME_CURRENT >nul 2>&1
+    echo.
+    echo   %G%✓ DONE!%N% Minimum CPU State set to 5%%.
+)
+if "!cpuchoice!"=="4" (
+    powercfg /SETACVALUEINDEX SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 893dee8e-2bef-41e0-89c6-b55d0929964c 100 >nul 2>&1
+    powercfg /SETACTIVE SCHEME_CURRENT >nul 2>&1
+    echo.
+    echo   %G%✓ DONE!%N% Minimum CPU State set to 100%%.
+)
+echo.
+pause
+goto :cpu_settings_menu
+
+:windows_update_manager
+call :show_header "[4.9] Windows Update Manager"
+echo   %G%[1]%N% Disable Windows Update completely
+echo   %G%[2]%N% Enable Windows Update (Default)
+echo   %R%[Q]%N% Back
+echo.
+set "wuchoice="
+set /p "wuchoice=  %C%➤%N% Select %W%[1-2/Q]%N%: "
+if /i "!wuchoice!"=="q" goto :system_tools
+if "!wuchoice!"=="1" (
+    echo.
+    echo   %Y%Disabling and stopping Windows Update services...%N%
+    net stop wuauserv >nul 2>&1
+    net stop bits >nul 2>&1
+    net stop dosvc >nul 2>&1
+    sc config wuauserv start= disabled >nul 2>&1
+    sc config bits start= disabled >nul 2>&1
+    sc config dosvc start= disabled >nul 2>&1
+    reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" /v NoAutoUpdate /t REG_DWORD /d 1 /f >nul 2>&1
+    echo   %G%✓ DONE!%N% Windows Update has been disabled.
+)
+if "!wuchoice!"=="2" (
+    echo.
+    echo   %G%Enabling Windows Update services...%N%
+    sc config wuauserv start= demand >nul 2>&1
+    sc config bits start= demand >nul 2>&1
+    sc config dosvc start= demand >nul 2>&1
+    reg delete "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" /v NoAutoUpdate /f >nul 2>&1
+    net start wuauserv >nul 2>&1
+    net start bits >nul 2>&1
+    echo   %G%✓ DONE!%N% Windows Update has been enabled.
+)
+echo.
+pause
+goto :windows_update_manager
+
 
 :sys_info
 call :show_header "[4.1] System Information"
@@ -1486,12 +1580,15 @@ call :box_line 62 "[3] Show emulator/VM disk usage" "%G%[3]%N% Show emulator/VM 
 call :box_line 62 "[4] Boost running emulator priority" "%G%[4]%N% Boost running emulator priority"
 call :box_line 62 "[5] Optimize host power/GPU/USB" "%G%[5]%N% Optimize host power/GPU/USB"
 call :box_line 62 "[6] Disable Hyper-V/VBS for native mode" "%Y%[6]%N% Disable Hyper-V/VBS for native mode"
+call :box_line 62 "[7] Set permanent emulator priority" "%G%[7]%N% Set permanent emulator priority"
+call :box_line 62 "[8] Add defender exceptions for emulators" "%G%[8]%N% Add defender exceptions for emulators"
+call :box_line 62 "[9] Compact VMware virtual disks (.vmdk)" "%G%[9]%N% Compact VMware virtual disks (.vmdk)"
 call :box_line 62 "[Q] Back" "%R%[Q]%N% Back"
 call :box_line 62 "" ""
 echo   %C%╚══════════════════════════════════════════════════════════════╝%N%
 echo.
 set "ldchoice="
-set /p "ldchoice=  %C%➤%N% Select %W%[1-6/Q]%N%: "
+set /p "ldchoice=  %C%➤%N% Select %W%[1-9/Q]%N%: "
 if /i "!ldchoice!"=="q" goto :main_menu
 if "!ldchoice!"=="1" (
     echo.
@@ -1545,6 +1642,9 @@ if "!ldchoice!"=="3" (
 if "!ldchoice!"=="4" goto :boost_emulators
 if "!ldchoice!"=="5" goto :optimize_vm_host
 if "!ldchoice!"=="6" goto :disable_hyperv_vbs
+if "!ldchoice!"=="7" goto :set_permanent_priority
+if "!ldchoice!"=="8" goto :add_defender_exclusions
+if "!ldchoice!"=="9" goto :compact_vmdk_tool
 echo.
 pause
 goto :ldplayer_tools
@@ -1613,6 +1713,85 @@ echo   %G%✓ DONE!%N% Hyper-V/VBS disable requested. %Y%Reboot required.%N%
 echo.
 pause
 goto :ldplayer_tools
+
+:set_permanent_priority
+call :show_header "[7.7] Permanent Priority Setup"
+echo   %Y%This configures Windows registry to automatically run%N%
+echo   %Y%LDPlayer and VMware at Above Normal priority.%N%
+echo.
+echo   %G%[1]%N% Enable permanent Above Normal CPU priority
+echo   %G%[2]%N% Disable permanent CPU priority (Restore default)
+echo   %R%[Q]%N% Back
+echo.
+set "prichoice="
+set /p "prichoice=  %C%➤%N% Select %W%[1-2/Q]%N%: "
+if /i "!prichoice!"=="q" goto :ldplayer_tools
+if "!prichoice!"=="1" (
+    echo.
+    echo   %G%[■]%N% Setting Registry PerfOptions...
+    reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\dnplayer.exe\PerfOptions" /v CpuPriorityClass /t REG_DWORD /d 6 /f >nul 2>&1
+    reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\LdVBoxHeadless.exe\PerfOptions" /v CpuPriorityClass /t REG_DWORD /d 6 /f >nul 2>&1
+    reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\vmware-vmx.exe\PerfOptions" /v CpuPriorityClass /t REG_DWORD /d 6 /f >nul 2>&1
+    echo   %G%✓ DONE!%N% Permanent CPU priority configured.
+)
+if "!prichoice!"=="2" (
+    echo.
+    echo   %G%[■]%N% Removing Registry PerfOptions...
+    reg delete "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\dnplayer.exe\PerfOptions" /v CpuPriorityClass /f >nul 2>&1
+    reg delete "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\LdVBoxHeadless.exe\PerfOptions" /v CpuPriorityClass /f >nul 2>&1
+    reg delete "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\vmware-vmx.exe\PerfOptions" /v CpuPriorityClass /f >nul 2>&1
+    echo   %G%✓ DONE!%N% CPU priority restored to default.
+)
+echo.
+pause
+goto :set_permanent_priority
+
+:add_defender_exclusions
+call :show_header "[7.8] Antivirus Exclusions"
+echo   %Y%Adding emulator paths to Windows Defender exclusion list%N%
+echo   %Y%to reduce background scanning overhead and CPU usage...%N%
+echo.
+powershell -NoProfile -Command "Add-MpPreference -ExclusionPath '$env:LOCALAPPDATA\LDPlayer', '$env:ProgramFiles\LDPlayer', '$env:USERPROFILE\Documents\Virtual Machines' -ErrorAction SilentlyContinue"
+echo   %G%✓ DONE!%N% Exclusions added:
+echo     - %W%%LOCALAPPDATA%\LDPlayer%N%
+echo     - %W%%ProgramFiles%\LDPlayer%N%
+echo     - %W%%USERPROFILE%\Documents\Virtual Machines%N%
+echo.
+pause
+goto :ldplayer_tools
+
+:compact_vmdk_tool
+call :show_header "[7.9] Compact VMware Virtual Disks"
+if not exist "!ProgramFiles(x86)!\VMware\VMware Workstation\vmware-vdiskmanager.exe" (
+    echo   %R%Error:%N% VMware Workstation is not installed at the default path.
+    echo          Could not locate vmware-vdiskmanager.exe.
+    echo.
+    pause
+    goto :ldplayer_tools
+)
+echo   %Y%This utility will compact the specified .vmdk file%N%
+echo   %Y%to reclaim unused disk space on the host SSD/HDD.%N%
+echo.
+echo   - Enter full path to the .vmdk file:
+echo     %DG%(e.g. C:\Users\Admin\Documents\Virtual Machines\Win10\Win10.vmdk)%N%
+set /p "vmdk_path=  ➤ "
+if not defined vmdk_path goto :ldplayer_tools
+if not exist "!vmdk_path!" (
+    echo.
+    echo   %R%Error:%N% File not found: %W%!vmdk_path!%N%
+    echo.
+    pause
+    goto :compact_vmdk_tool
+)
+echo.
+echo   %G%⏳%N% Compacting virtual disk (this may take a few minutes)...
+"!ProgramFiles(x86)!\VMware\VMware Workstation\vmware-vdiskmanager.exe" -k "!vmdk_path!"
+echo.
+echo   %G%✓ DONE!%N% Virtual disk compaction complete.
+echo.
+pause
+goto :ldplayer_tools
+
 
 :: ============================================================
 :: [4.5] RESTART EXPLORER

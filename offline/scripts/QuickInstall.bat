@@ -36,33 +36,25 @@ if %errorlevel% neq 0 (
 )
 
 :: ============================================================
-:: SOFTWARE URLs
+:: SOFTWARE URLs (Redirecting URLs for Latest Version)
 :: ============================================================
 
 :: --- Browser ---
 set "CHROME_URL=https://dl.google.com/chrome/install/googlechromestandaloneenterprise64.msi"
 
-:: --- Utilities ---
-set "SEVENZIP_URL=https://www.7-zip.org/a/7z2408-x64.exe"
-
-:: --- Runtime ---
+:: --- Runtime (Latest VC++ 2015-2022) ---
 set "VCREDIST_URL=https://aka.ms/vs/17/release/vc_redist.x64.exe"
 
-:: --- LDPlayer Emulator ---
-set "LDPLAYER_URL=https://res.ldrescdn.com/download/LDPlayer9.exe?n=LDPlayer9_vi_1254_ld.exe"
-
-:: --- Vietnamese Input ---
-set "UNIKEY_URL=https://www.unikey.org/assets/release/unikey46RC2-230919-win64.zip"
-
-:: --- Virtualization (auto-detect) ---
+:: --- Virtualization (Latest stable VirtIO Guest Tools) ---
 set "VIRTIO_URL=https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/latest-virtio/virtio-win-guest-tools.exe"
 
 :: --- .NET 10 Desktop Runtime ---
-set "DOTNET10_URL=https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/10.0.8/windowsdesktop-runtime-10.0.8-win-x64.exe"
+set "DOTNET10_URL=https://aka.ms/dotnet/10.0/windowsdesktop-runtime-win-x64.exe"
 
 :: --- Google Drive Software Folder (all extra software lives here) ---
 :: Update files on Drive WITHOUT rebuilding ISO!
 set "GDRIVE_FOLDER_ID=1-AOvLBDWO0ALzGpeJzVxuDkwLgqZWbAy"
+
 
 :: ============================================================
 :: DO NOT EDIT BELOW
@@ -254,10 +246,37 @@ if exist "%NEN_SRC%" (
 )
 echo [*] Chrome optimizations done >> "%LOG%"
 
-:: --- 2. 7-Zip ---
-call :install_app "2/8" "7-Zip" "%SEVENZIP_URL%" "7zip.exe" "nsis" "%ProgramFiles%\7-Zip\7z.exe" "%ProgramFiles(x86)%\7-Zip\7z.exe"
+:: --- 2/8. 7-Zip ---
+set "SEVENZIP_EXE=%ProgramFiles%\7-Zip\7z.exe"
+set "SEVENZIP_EXE2=%ProgramFiles(x86)%\7-Zip\7z.exe"
+set "SZ_FOUND=0"
+if exist "%SEVENZIP_EXE%" set "SZ_FOUND=1"
+if exist "%SEVENZIP_EXE2%" set "SZ_FOUND=1"
 
-:: --- 3. VC++ Redistributable ---
+if "%SZ_FOUND%"=="1" (
+    echo [2/8] 7-Zip: already installed, skipping.
+    echo [2/8] 7-Zip: ALREADY INSTALLED >> "%LOG%"
+    set /a TOTAL_SKIP+=1
+) else (
+    echo [2/8] Installing 7-Zip (fetching latest version)...
+    echo [2/8] Downloading 7-Zip... >> "%LOG%"
+    %PS_DL% "$h=Invoke-WebRequest -Uri 'https://www.7-zip.org/download.html' -UseBasicParsing; $l=($h.Links | Where-Object {$_.href -match 'a/7z.*-x64\.exe'} | Select-Object -First 1).href; Invoke-WebRequest -Uri ('https://www.7-zip.org/' + $l) -OutFile '%DL_DIR%\7zip.exe' -UseBasicParsing" >> "%LOG%" 2>&1
+    if exist "%DL_DIR%\7zip.exe" (
+        echo [2/8] Installing 7-Zip... >> "%LOG%"
+        start /wait "" "%DL_DIR%\7zip.exe" /S
+        set "EXIT_CODE=!errorlevel!"
+        echo [2/8] 7-Zip exit code: !EXIT_CODE! >> "%LOG%"
+        del /f /q "%DL_DIR%\7zip.exe" >nul 2>&1
+        if !EXIT_CODE! equ 0 (set /a TOTAL_OK+=1) else (set /a TOTAL_FAIL+=1)
+        echo        Done.
+    ) else (
+        echo        ERROR: download failed.
+        echo [2/8] 7-Zip: DOWNLOAD FAILED >> "%LOG%"
+        set /a TOTAL_FAIL+=1
+    )
+)
+
+:: --- 3/8. VC++ Redistributable ---
 if /i "%VCREDIST_URL%"=="SKIP" (
     echo [3/8] VC++ Redist: SKIPPED
     echo [3/8] VC++ Redist: SKIPPED >> "%LOG%"
@@ -272,7 +291,7 @@ if /i "%VCREDIST_URL%"=="SKIP" (
     ) else (
         echo [3/8] Installing VC++ Redistributable...
         echo [3/8] Downloading VC++ Redist... >> "%LOG%"
-        %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%VCREDIST_URL%' -OutFile '%DL_DIR%\vcredist.exe' -UseBasicParsing"
+        %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%VCREDIST_URL%' -OutFile '%DL_DIR%\vcredist.exe' -UseBasicParsing" >> "%LOG%" 2>&1
         if exist "%DL_DIR%\vcredist.exe" (
             echo [3/8] Installing VC++ Redist... >> "%LOG%"
             start /wait "" "%DL_DIR%\vcredist.exe" /install /quiet /norestart
@@ -289,7 +308,7 @@ if /i "%VCREDIST_URL%"=="SKIP" (
     )
 )
 
-:: --- 4. VirtIO Guest Tools (auto-detect QEMU/Proxmox) ---
+:: --- 4/8. VirtIO Guest Tools (auto-detect QEMU/Proxmox) ---
 set "IS_QEMU=0"
 for /f "tokens=*" %%M in ('wmic computersystem get manufacturer /value 2^>nul ^| findstr /i "QEMU"') do set "IS_QEMU=1"
 echo [4/8] Detection: QEMU=%IS_QEMU% >> "%LOG%"
@@ -302,7 +321,7 @@ if "%IS_QEMU%"=="1" (
     ) else (
         echo [4/8] Installing VirtIO Guest Tools ^(Proxmox/QEMU detected^)...
         echo [4/8] Downloading VirtIO... >> "%LOG%"
-        %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%VIRTIO_URL%' -OutFile '%DL_DIR%\virtio-win-guest-tools.exe' -UseBasicParsing"
+        %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%VIRTIO_URL%' -OutFile '%DL_DIR%\virtio-win-guest-tools.exe' -UseBasicParsing" >> "%LOG%" 2>&1
         if exist "%DL_DIR%\virtio-win-guest-tools.exe" (
             start /wait "" "%DL_DIR%\virtio-win-guest-tools.exe" /install /quiet /norestart
             set "EXIT_CODE=!errorlevel!"
@@ -322,120 +341,109 @@ if "%IS_QEMU%"=="1" (
     set /a TOTAL_SKIP+=1
 )
 
-:: --- 5. LDPlayer 9 (download to Software folder) ---
-echo [5/8] Downloading LDPlayer 9 to Software folder...
-echo [5/8] Downloading LDPlayer 9... >> "%LOG%"
-if exist "%SOFTWARE_DIR%\LDPlayer9_Installer.exe" (
-    echo [5/8] LDPlayer: already downloaded, skipping.
-    echo [5/8] LDPlayer: ALREADY EXISTS >> "%LOG%"
+:: --- 5/8. UniKey ---
+set "UNIKEY_ROOT=%ProgramFiles%\UniKey"
+set "EXISTING_EXE="
+if exist "!UNIKEY_ROOT!" (
+    for /r "!UNIKEY_ROOT!" %%F in (UniKeyNT.exe) do if not defined EXISTING_EXE set "EXISTING_EXE=%%F"
+)
+if defined EXISTING_EXE (
+    echo [5/8] UniKey: already installed, skipping.
+    echo [5/8] UniKey: ALREADY INSTALLED >> "%LOG%"
     set /a TOTAL_SKIP+=1
 ) else (
-    %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%LDPLAYER_URL%' -OutFile '%SOFTWARE_DIR%\LDPlayer9_Installer.exe' -UseBasicParsing"
-    if exist "%SOFTWARE_DIR%\LDPlayer9_Installer.exe" (
-        echo        Done. Saved to Software\LDPlayer9_Installer.exe
-        echo [5/8] LDPlayer: DOWNLOADED >> "%LOG%"
-        set /a TOTAL_OK+=1
+    echo [5/8] Installing UniKey (fetching latest version)...
+    echo [5/8] Downloading UniKey... >> "%LOG%"
+    if not exist "!UNIKEY_ROOT!" mkdir "!UNIKEY_ROOT!" >nul 2>&1
+    %PS_DL% "$h=Invoke-WebRequest -Uri 'https://www.unikey.org/download.html' -UseBasicParsing; $l=($h.Links | Where-Object {$_.href -match 'unikey.*-win64\.zip'} | Select-Object -First 1).href; if($l -notmatch '^http'){$l='https://www.unikey.org' + $l}; Invoke-WebRequest -Uri $l -OutFile '%DL_DIR%\unikey.zip' -UseBasicParsing -UserAgent 'Mozilla/5.0'" >> "%LOG%" 2>&1
+    if exist "%DL_DIR%\unikey.zip" (
+        %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -LiteralPath '%DL_DIR%\unikey.zip' -DestinationPath '!UNIKEY_ROOT!' -Force" >nul 2>&1
+        del /f /q "%DL_DIR%\unikey.zip" >nul 2>&1
+        for /d %%D in ("!UNIKEY_ROOT!\*") do (
+            if exist "%%D\UniKeyNT.exe" (
+                xcopy "%%D\*" "!UNIKEY_ROOT!\" /E /Y /Q >nul 2>&1
+                rmdir /s /q "%%D" >nul 2>&1
+            )
+        )
+        if exist "!UNIKEY_ROOT!\UniKeyNT.exe" (
+            %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut('%PUBLIC%\Desktop\UniKey.lnk');$s.TargetPath='!UNIKEY_ROOT!\UniKeyNT.exe';$s.WorkingDirectory='!UNIKEY_ROOT!';$s.Save()" >nul 2>&1
+            %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('CommonStartup')+'\UniKey.lnk');$s.TargetPath='!UNIKEY_ROOT!\UniKeyNT.exe';$s.WorkingDirectory='!UNIKEY_ROOT!';$s.Save()" >nul 2>&1
+            start "" "!UNIKEY_ROOT!\UniKeyNT.exe"
+            echo        Done. UniKey installed.
+            echo [5/8] UniKey: OK >> "%LOG%"
+            set /a TOTAL_OK+=1
+        ) else (
+            echo        WARNING: UniKeyNT.exe not found after extract.
+            echo [5/8] UniKey: EXTRACT FAILED >> "%LOG%"
+            set /a TOTAL_FAIL+=1
+        )
     ) else (
-        echo        ERROR: download failed.
-        echo [5/8] LDPlayer: DOWNLOAD FAILED >> "%LOG%"
+        echo        ERROR: Download failed.
+        echo [5/8] UniKey: DOWNLOAD FAILED >> "%LOG%"
         set /a TOTAL_FAIL+=1
     )
 )
 
-:: --- 6. UniKey ---
-if /i "%UNIKEY_URL%"=="SKIP" (
-    echo [6/8] UniKey: SKIPPED
-    echo [6/8] UniKey: SKIPPED >> "%LOG%"
-    set /a TOTAL_SKIP+=1
-) else (
-    set "UNIKEY_ROOT=%ProgramFiles%\UniKey"
-    set "EXISTING_EXE="
-    if exist "!UNIKEY_ROOT!" (
-        for /r "!UNIKEY_ROOT!" %%F in (UniKeyNT.exe) do if not defined EXISTING_EXE set "EXISTING_EXE=%%F"
-    )
-    if defined EXISTING_EXE (
-        echo [6/8] UniKey: already installed, skipping.
-        echo [6/8] UniKey: ALREADY INSTALLED >> "%LOG%"
-        set /a TOTAL_SKIP+=1
-    ) else (
-        echo [6/8] Installing UniKey...
-        echo [6/8] Downloading UniKey... >> "%LOG%"
-        if not exist "!UNIKEY_ROOT!" mkdir "!UNIKEY_ROOT!" >nul 2>&1
-        %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%UNIKEY_URL%' -OutFile '%DL_DIR%\unikey.zip' -UseBasicParsing -UserAgent 'Mozilla/5.0'"
-        if exist "%DL_DIR%\unikey.zip" (
-            %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -LiteralPath '%DL_DIR%\unikey.zip' -DestinationPath '!UNIKEY_ROOT!' -Force" >nul 2>&1
-            del /f /q "%DL_DIR%\unikey.zip" >nul 2>&1
-            for /d %%D in ("!UNIKEY_ROOT!\*") do (
-                if exist "%%D\UniKeyNT.exe" (
-                    xcopy "%%D\*" "!UNIKEY_ROOT!\" /E /Y /Q >nul 2>&1
-                    rmdir /s /q "%%D" >nul 2>&1
-                )
-            )
-            if exist "!UNIKEY_ROOT!\UniKeyNT.exe" (
-                %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut('%PUBLIC%\Desktop\UniKey.lnk');$s.TargetPath='!UNIKEY_ROOT!\UniKeyNT.exe';$s.WorkingDirectory='!UNIKEY_ROOT!';$s.Save()" >nul 2>&1
-                %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('CommonStartup')+'\UniKey.lnk');$s.TargetPath='!UNIKEY_ROOT!\UniKeyNT.exe';$s.WorkingDirectory='!UNIKEY_ROOT!';$s.Save()" >nul 2>&1
-                start "" "!UNIKEY_ROOT!\UniKeyNT.exe"
-                echo        Done. UniKey installed.
-                echo [6/8] UniKey: OK >> "%LOG%"
-                set /a TOTAL_OK+=1
-            ) else (
-                echo        WARNING: UniKeyNT.exe not found after extract.
-                echo [6/8] UniKey: EXTRACT FAILED >> "%LOG%"
-                set /a TOTAL_FAIL+=1
-            )
-        ) else (
-            echo        ERROR: Download failed.
-            echo [6/8] UniKey: DOWNLOAD FAILED >> "%LOG%"
-            set /a TOTAL_FAIL+=1
-        )
-    )
-)
-
-:: --- 7. .NET 10 Desktop Runtime ---
-echo [7/8] Checking .NET 10 Desktop Runtime...
-set "DOTNET10_FOUND=0"
+:: --- 6/8. .NET 10 Desktop Runtime ---
+echo [6/8] Checking .NET 10 Desktop Runtime...
 %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "if(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue | Get-ItemProperty | Where-Object {$_.DisplayName -match 'Microsoft Windows Desktop Runtime.*10\.0'}){exit 0}else{exit 1}" >nul 2>&1
 if !errorlevel! equ 0 (
-    echo [7/8] .NET 10 Desktop Runtime: already installed, skipping.
-    echo [7/8] .NET 10: ALREADY INSTALLED >> "%LOG%"
+    echo [6/8] .NET 10 Desktop Runtime: already installed, skipping.
+    echo [6/8] .NET 10: ALREADY INSTALLED >> "%LOG%"
     set /a TOTAL_SKIP+=1
 ) else (
-    echo [7/8] Installing .NET 10 Desktop Runtime...
-    echo [7/8] Downloading .NET 10... >> "%LOG%"
-    %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%DOTNET10_URL%' -OutFile '%DL_DIR%\dotnet10-desktop.exe' -UseBasicParsing"
+    echo [6/8] Installing .NET 10 Desktop Runtime...
+    echo [6/8] Downloading .NET 10... >> "%LOG%"
+    %PS_DL% "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '%DOTNET10_URL%' -OutFile '%DL_DIR%\dotnet10-desktop.exe' -UseBasicParsing" >> "%LOG%" 2>&1
     if exist "%DL_DIR%\dotnet10-desktop.exe" (
-        echo [7/8] Installing .NET 10... >> "%LOG%"
+        echo [6/8] Installing .NET 10... >> "%LOG%"
         start /wait "" "%DL_DIR%\dotnet10-desktop.exe" /install /quiet /norestart
         set "EXIT_CODE=!errorlevel!"
-        echo [7/8] .NET 10 exit code: !EXIT_CODE! >> "%LOG%"
+        echo [6/8] .NET 10 exit code: !EXIT_CODE! >> "%LOG%"
         del /f /q "%DL_DIR%\dotnet10-desktop.exe" >nul 2>&1
         if !EXIT_CODE! equ 0 (set /a TOTAL_OK+=1) else if !EXIT_CODE! equ 3010 (set /a TOTAL_OK+=1) else (set /a TOTAL_FAIL+=1)
         echo        Done.
     ) else (
         echo        ERROR: download failed.
-        echo [7/8] .NET 10: DOWNLOAD FAILED >> "%LOG%"
+        echo [6/8] .NET 10: DOWNLOAD FAILED >> "%LOG%"
         set /a TOTAL_FAIL+=1
     )
 )
 
-:: --- 8. Download Software from Google Drive folder ---
+:: --- 7/8. Download Software from Google Drive folder ---
 :: All extra software (VMware, MSI Afterburner, FanControl, etc.) lives in one Drive folder.
 :: Add/remove/update files on Drive WITHOUT rebuilding ISO!
-echo [8/8] Downloading Software from Google Drive folder...
-echo [8/8] Downloading Software folder from Google Drive... >> "%LOG%"
+echo [7/8] Downloading Software from Google Drive folder...
+echo [7/8] Downloading Software folder from Google Drive... >> "%LOG%"
 set "GDRIVE_SCRIPT=C:\InstallScripts\gdrive_folder_dl.ps1"
 if exist "%GDRIVE_SCRIPT%" (
     %SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '%GDRIVE_SCRIPT%' '%GDRIVE_FOLDER_ID%' '%SOFTWARE_DIR%' 2>&1 | Tee-Object -FilePath '%LOG%' -Append"
     if !errorlevel! equ 0 (
-        echo [8/8] Software folder: ALL OK >> "%LOG%"
+        echo [7/8] Software folder: ALL OK >> "%LOG%"
         set /a TOTAL_OK+=1
     ) else (
-        echo [8/8] Software folder: SOME DOWNLOADS FAILED >> "%LOG%"
+        echo [7/8] Software folder: SOME DOWNLOADS FAILED >> "%LOG%"
         set /a TOTAL_FAIL+=1
     )
 ) else (
     echo        ERROR: gdrive_folder_dl.ps1 not found.
-    echo [8/8] Software folder: SCRIPT MISSING >> "%LOG%"
+    echo [7/8] Software folder: SCRIPT MISSING >> "%LOG%"
+    set /a TOTAL_FAIL+=1
+)
+
+:: --- 8/8. Verify Software folder (confirm LDPlayer 9 and others) ---
+echo [8/8] Verifying downloaded Google Drive software installers...
+echo [8/8] Verifying downloaded Google Drive software installers... >> "%LOG%"
+set "LDPLAYER_FILE="
+for %%F in ("%SOFTWARE_DIR%\*LDPlayer*.exe" "%SOFTWARE_DIR%\*ldplayer*.exe") do set "LDPLAYER_FILE=%%~fF"
+
+if defined LDPLAYER_FILE (
+    echo        LDPlayer 9 installer found: !LDPLAYER_FILE!
+    echo [8/8] LDPlayer 9 installer: FOUND >> "%LOG%"
+    set /a TOTAL_OK+=1
+) else (
+    echo        WARNING: LDPlayer 9 installer not found in Software folder.
+    echo [8/8] LDPlayer 9 installer: NOT FOUND >> "%LOG%"
     set /a TOTAL_FAIL+=1
 )
 
