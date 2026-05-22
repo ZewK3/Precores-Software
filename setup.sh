@@ -188,24 +188,19 @@ partition_disk() {
     {
         wipefs -a "$DISK"
         
-        local part_suffix=""
-        if [[ "$DISK" =~ [0-9]$ ]]; then
-            part_suffix="p"
-        fi
-        
         if [[ "$BOOT_MODE" == "UEFI" ]]; then
             parted -s "$DISK" mklabel gpt
             parted -s "$DISK" mkpart primary fat32 1MiB 512MiB
             parted -s "$DISK" set 1 esp on
             parted -s "$DISK" mkpart primary ext4 512MiB 100%
             
-            BOOT_PART="${DISK}${part_suffix}1"
-            ROOT_PART="${DISK}${part_suffix}2"
+            BOOT_PART="${DISK}1"
+            ROOT_PART="${DISK}2"
         else
             parted -s "$DISK" mklabel msdos
             parted -s "$DISK" mkpart primary ext4 1MiB 100%
             
-            ROOT_PART="${DISK}${part_suffix}1"
+            ROOT_PART="${DISK}1"
         fi
         
         partprobe "$DISK"
@@ -313,16 +308,16 @@ compression-algorithm = zstd
 swap-priority = 100
 EOF
         
-        # VMware Optimized Memory Tuning
+        # Ultra-aggressive memory optimization
         cat > /mnt/etc/sysctl.d/99-vm-ultra.conf <<EOF
-# VMware Optimized Memory Tuning
-vm.swappiness = 10
-vm.vfs_cache_pressure = 50
-vm.dirty_ratio = 20
-vm.dirty_background_ratio = 10
-vm.min_free_kbytes = 16384
+# Ultra-aggressive memory optimization
+vm.swappiness = 5
+vm.vfs_cache_pressure = 30
+vm.dirty_ratio = 5
+vm.dirty_background_ratio = 3
+vm.min_free_kbytes = 8192
 vm.overcommit_memory = 1
-vm.overcommit_ratio = 90
+vm.overcommit_ratio = 80
 fs.file-max = 2097152
 
 # Disable unnecessary features
@@ -372,7 +367,7 @@ install_bootloader() {
         arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg
         
         # Optimize kernel boot parameters for VM farm
-        arch-chroot /mnt sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="[^"]*"/GRUB_CMDLINE_LINUX_DEFAULT="quiet loglevel=3 nowatchdog mitigations=off audit=0 selinux=0"/' /etc/default/grub
+        arch-chroot /mnt sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="[^"]*"/GRUB_CMDLINE_LINUX_DEFAULT="quiet loglevel=3 nowatchdog mitigations=off"/' /etc/default/grub
         arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg
     } >> "$LOG_FILE" 2>&1 || show_error "Bootloader installation failed"
     
@@ -388,7 +383,6 @@ install_network() {
     
     {
         arch-chroot /mnt systemctl enable NetworkManager
-        arch-chroot /mnt systemctl enable systemd-timesyncd
         
         if [[ "$INSTALL_SSH" == "true" ]]; then
             arch-chroot /mnt pacman -S --noconfirm openssh
@@ -549,13 +543,11 @@ net.core.wmem_max = 16777216
 net.ipv4.tcp_fastopen = 3
 net.ipv4.tcp_fin_timeout = 10
 net.ipv4.tcp_tw_reuse = 1
-net.core.default_qdisc = fq
-net.ipv4.tcp_congestion_control = bbr
 EOF
         
-        # I/O scheduler optimization (optimized for VMware guest with paravirtual none scheduler)
+        # I/O scheduler optimization
         cat > /mnt/etc/udev/rules.d/60-ioschedulers.rules <<EOF
-ACTION=="add|change", KERNEL=="sd[a-z]|mmcblk[0-9]*|nvme[0-9]*", ATTR{queue/rotational}=="0", ATTR{queue/scheduler}="none"
+ACTION=="add|change", KERNEL=="sd[a-z]|mmcblk[0-9]*|nvme[0-9]*", ATTR{queue/rotational}=="0", ATTR{queue/scheduler}="mq-deadline"
 ACTION=="add|change", KERNEL=="sd[a-z]", ATTR{queue/rotational}=="1", ATTR{queue/scheduler}="bfq"
 EOF
         
@@ -939,44 +931,33 @@ download_precoreshub() {
         log_silent "WARNING: pacman -S for prerequisite packages returned non-zero"
     arch-chroot /mnt update-ca-trust 2>/dev/null || true
 
-    # 2) Get PrecoresHub archive (try local ISO boot media first, fallback to GitHub download)
-    local local_tar="/run/archiso/bootmnt/PrecoresHub.tar.gz"
+    # 2) Download from GitHub with retries
+    # NOTE: arch-chroot mounts a private tmpfs on /tmp — files there vanish after exit.
+    #       Use /root/ instead so the file persists on the real root filesystem.
     local tmp_tar="/mnt/root/PrecoresHub.tar.gz"
     rm -f "$tmp_tar"
 
-    if [[ -f "$local_tar" ]]; then
-        log_silent "Found local PrecoresHub archive at ${local_tar}. Copying..."
-        if cp "$local_tar" "$tmp_tar" >> "$LOG_FILE" 2>&1; then
-            log_silent "Local copy successful."
-        else
-            log_silent "WARNING: Failed to copy local PrecoresHub archive, falling back to download."
-            rm -f "$tmp_tar"
-        fi
-    fi
-
-    if [[ ! -f "$tmp_tar" ]]; then
-        for attempt in 1 2 3; do
-            log_silent "Download attempt ${attempt}/3 from ${PRECORES_TARBALL_URL}"
-            arch-chroot /mnt curl -k -L --connect-timeout 30 --max-time 180 \
-                    -o /root/PrecoresHub.tar.gz "$PRECORES_TARBALL_URL" >> "$LOG_FILE" 2>&1 || true
-            
-            # Check if file was actually downloaded (don't trust curl exit code)
-            if [[ -f "$tmp_tar" ]]; then
-                local dl_size
-                dl_size=$(stat -c%s "$tmp_tar" 2>/dev/null || echo "0")
-                if [[ "$dl_size" -gt 10000 ]]; then
-                    log_silent "Download OK (${dl_size} bytes)"
-                    break
-                fi
+    for attempt in 1 2 3; do
+        log_silent "Download attempt ${attempt}/3 from ${PRECORES_TARBALL_URL}"
+        arch-chroot /mnt curl -k -L --connect-timeout 30 --max-time 180 \
+                -o /root/PrecoresHub.tar.gz "$PRECORES_TARBALL_URL" >> "$LOG_FILE" 2>&1 || true
+        
+        # Check if file was actually downloaded (don't trust curl exit code)
+        if [[ -f "$tmp_tar" ]]; then
+            local dl_size
+            dl_size=$(stat -c%s "$tmp_tar" 2>/dev/null || echo "0")
+            if [[ "$dl_size" -gt 10000 ]]; then
+                log_silent "Download OK (${dl_size} bytes)"
+                break
             fi
-            log_silent "Attempt ${attempt} failed or file too small, retrying..."
-            rm -f "$tmp_tar"
-            sleep 3
-        done
-    fi
+        fi
+        log_silent "Attempt ${attempt} failed or file too small, retrying..."
+        rm -f "$tmp_tar"
+        sleep 3
+    done
 
     if [[ ! -f "$tmp_tar" ]]; then
-        log_silent "ERROR: PrecoresHub archive acquisition failed - Skipping"
+        log_silent "ERROR: PrecoresHub download failed after 3 attempts - Skipping"
         return 0
     fi
 
@@ -994,7 +975,6 @@ download_precoreshub() {
             local inner
             inner=$(ls /mnt/root/_pre_extract/ 2>/dev/null | head -1)
             if [[ -n "$inner" && -d "/mnt/root/_pre_extract/$inner" ]]; then
-                rm -rf "/mnt${PRECORES_DIR}"
                 mv "/mnt/root/_pre_extract/$inner" "/mnt${PRECORES_DIR}"
             fi
             rm -rf /mnt/root/_pre_extract
@@ -1088,7 +1068,7 @@ Name=PrecoresHub
 GenericName=Linux Control Center
 Comment=Unified package & system manager for Linux
 Exec=xfce4-terminal --geometry=120x35 --title=PrecoresHub --command="bash -lc 'precoreshub; echo; read -n 1 -s -r -p \"Press any key to close...\"'"
-Icon=/usr/share/icons/hicolor/scalable/apps/precoreshub.svg
+Icon=precoreshub
 Terminal=false
 Categories=System;Settings;PackageManager;
 Keywords=hub;package;install;system;manager;
