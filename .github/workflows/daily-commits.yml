@@ -27,23 +27,28 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
 
-      - name: Create 35-50 daily commits
+      - name: Create 50-100 daily commits
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'ZewK3'
-          git config user.email 'Dailoi.1106@gmail.com'
+          git config user.email 'dailoi1106@gmail.com'
           day=$(date +%F)
           file=".daily-activity/$day.txt"
           target_file=".daily-activity/$day.target"
           mkdir -p .daily-activity
           if [[ -f "$target_file" ]]; then
             target=$(cat "$target_file")
+            # Upgrade targets saved by the previous 35-50 configuration.
+            if [[ "$target" =~ ^(3[5-9]|4[0-9])$ ]]; then
+              target=$(shuf -i 50-100 -n 1)
+              printf '%s\n' "$target" > "$target_file"
+            fi
           else
-            target=$(shuf -i 35-50 -n 1)
+            target=$(shuf -i 50-100 -n 1)
             printf '%s\n' "$target" > "$target_file"
           fi
-          if [[ ! "$target" =~ ^(3[5-9]|4[0-9]|50)$ ]]; then
+          if [[ ! "$target" =~ ^([5-9][0-9]|100)$ ]]; then
             echo "Invalid daily target: $target" >&2
             exit 1
           fi
