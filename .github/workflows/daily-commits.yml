@@ -1,0 +1,64 @@
+name: Daily commits
+
+on:
+  schedule:
+    # 02:17 UTC = 09:17 Vietnam time
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-commits
+  cancel-in-progress: false
+
+jobs:
+  commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TZ: Asia/Ho_Chi_Minh
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+
+      - name: Create 35-50 daily commits
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'ZewK3'
+          git config user.email 'Dailoi.1106@gmail.com'
+          day=$(date +%F)
+          file=".daily-activity/$day.txt"
+          target_file=".daily-activity/$day.target"
+          mkdir -p .daily-activity
+          if [[ -f "$target_file" ]]; then
+            target=$(cat "$target_file")
+          else
+            target=$(shuf -i 35-50 -n 1)
+            printf '%s\n' "$target" > "$target_file"
+          fi
+          if [[ ! "$target" =~ ^(3[5-9]|4[0-9]|50)$ ]]; then
+            echo "Invalid daily target: $target" >&2
+            exit 1
+          fi
+          count=0
+          if [[ -f "$file" ]]; then
+            count=$(wc -l < "$file")
+          fi
+          if (( count >= target )); then
+            echo "Daily target already reached for $day."
+            exit 0
+          fi
+          for ((i=count+1; i<=target; i++)); do
+            printf '%s | Automated activity %s/%s\n' "$(date -Iseconds)" "$i" "$target" >> "$file"
+            git add -- "$file" "$target_file"
+            git commit -m "chore: automated daily activity $day ($i/$target)"
+          done
+          git pull --rebase origin "$DEFAULT_BRANCH"
+          git push origin "HEAD:$DEFAULT_BRANCH"
